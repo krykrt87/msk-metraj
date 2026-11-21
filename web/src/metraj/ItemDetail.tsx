@@ -5,6 +5,7 @@ import type { FacadeRow, Item, Room, UserProfile } from '@shared/types';
 import { api } from '../data/api';
 import { useHistory } from '../data/hooks';
 import { formatDateTime } from '../data/types';
+import { Collapsible } from '../common/Collapsible';
 import { Breakdown } from './Breakdown';
 import { CorrectionForm } from './CorrectionForm';
 import { isUnmeasurable } from './filter';
@@ -69,10 +70,10 @@ export function ItemDetail({
           </>
         )}
         <dt>Hesap yöntemi</dt>
-        <dd>{item.method || '—'}</dd>
+        <dd><Collapsible key={`m-${item.id}`} text={item.method} /></dd>
         <dt>Kaynak pafta</dt>
         <dd>
-          {item.sourceText || '—'}
+          <Collapsible key={`s-${item.id}`} text={item.sourceText} />
           {item.drawings.length > 0 && <div className="chips">{item.drawings.map((d) => <span key={d} className="chip">{d.replace('4199-A-DD-', '')}</span>)}</div>}
         </dd>
         <dt>Güven</dt>

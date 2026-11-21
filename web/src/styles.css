@@ -722,3 +722,24 @@ label.check {
   font-weight: 600;
   border-top: 1px solid var(--ink-2);
 }
+.collapsible {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.col-toggle {
+  display: inline-block;
+  margin-left: 6px;
+  color: var(--stamp);
+  font-size: var(--fs-1);
+  font-weight: 500;
+}
+.collapsible:hover .col-toggle {
+  text-decoration: underline;
+}
