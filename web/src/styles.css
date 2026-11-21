@@ -1,0 +1,296 @@
+@import '@fontsource/barlow/400.css';
+@import '@fontsource/barlow/500.css';
+@import '@fontsource/barlow/600.css';
+@import '@fontsource/barlow-semi-condensed/400.css';
+@import '@fontsource/barlow-semi-condensed/500.css';
+@import '@fontsource/barlow-semi-condensed/600.css';
+
+/* Pafta dili: kâğıt zemin, grafit çizgi, kırmızı kalem düzeltme, lacivert onay damgası. */
+:root {
+  --paper: #f6f7f5;
+  --panel: #ffffff;
+  --ink: #1f2328;
+  --ink-2: #5a6270;
+  --ink-3: #8a929c;
+  --rule: #dce0e3;
+  --rule-strong: #b9c0c6;
+  --redline: #b42318;
+  --redline-soft: #fdecea;
+  --stamp: #1d4e89;
+  --stamp-soft: #e8eef7;
+  --ok: #2e7d4f;
+  --warn: #b54708;
+  --recheck: #6941c6;
+  --select: #e8eef7;
+
+  --font-ui: 'Barlow', system-ui, sans-serif;
+  --font-data: 'Barlow Semi Condensed', 'Barlow', system-ui, sans-serif;
+  --fs-0: 12px;
+  --fs-1: 13px;
+  --fs-2: 14px;
+  --fs-3: 16px;
+  --fs-4: 20px;
+  --radius: 3px;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--fs-2);
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.2;
+}
+h1 {
+  font-size: var(--fs-4);
+}
+h2 {
+  font-size: var(--fs-3);
+}
+h3 {
+  font-size: var(--fs-2);
+}
+:focus-visible {
+  outline: 2px solid var(--stamp);
+  outline-offset: 2px;
+}
+
+/* --- Antet */
+.title-block {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  border: 1.5px solid var(--ink);
+  font-family: var(--font-data);
+  background: var(--panel);
+  width: max-content;
+}
+.tb-cell {
+  display: flex;
+  flex-direction: column;
+  padding: 3px 10px 4px;
+  border-left: 1px solid var(--ink);
+}
+.tb-cell:first-child {
+  border-left: 0;
+}
+.tb-key {
+  font-size: 10px;
+  color: var(--ink-2);
+  line-height: 1.1;
+}
+.tb-val {
+  font-size: var(--fs-2);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* --- Düğmeler ve formlar */
+.btn {
+  font: inherit;
+  font-size: var(--fs-1);
+  font-weight: 500;
+  border: 1px solid var(--rule-strong);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.btn:hover {
+  border-color: var(--ink-2);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn.primary {
+  background: var(--stamp);
+  border-color: var(--stamp);
+  color: #fff;
+}
+.btn.redline {
+  background: var(--redline);
+  border-color: var(--redline);
+  color: #fff;
+}
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-2);
+}
+.btn.ghost:hover {
+  color: var(--ink);
+}
+input,
+select,
+textarea {
+  font: inherit;
+  font-size: var(--fs-2);
+  color: var(--ink);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  padding: 5px 8px;
+  background: var(--panel);
+}
+textarea {
+  resize: vertical;
+  min-height: 56px;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: var(--fs-1);
+  color: var(--ink-2);
+}
+.form-error {
+  color: var(--redline);
+  background: var(--redline-soft);
+  border-left: 3px solid var(--redline);
+  padding: 6px 10px;
+  margin: 0;
+  font-size: var(--fs-1);
+}
+.hint {
+  color: var(--ink-3);
+  font-size: var(--fs-0);
+  margin: 0;
+}
+
+/* --- Giriş */
+.login {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.login-card {
+  width: min(380px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.center-note {
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  padding: 48px 16px;
+  color: var(--ink-2);
+}
+
+/* --- Kabuk */
+.shell {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 8px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--rule);
+}
+.mainnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  flex: 1;
+}
+.mainnav a {
+  color: var(--ink-2);
+  text-decoration: none;
+  padding: 6px 10px;
+  border-bottom: 2px solid transparent;
+  font-weight: 500;
+}
+.mainnav a:hover {
+  color: var(--ink);
+}
+.mainnav a.active {
+  color: var(--ink);
+  border-bottom-color: var(--stamp);
+}
+.userbox {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+.user-name {
+  font-weight: 600;
+}
+.user-role {
+  color: var(--ink-2);
+  font-size: var(--fs-1);
+}
+.page {
+  min-height: 0;
+  overflow: auto;
+}
+.placeholder {
+  padding: 24px;
+}
+.placeholder p {
+  color: var(--ink-2);
+}
+
+/* --- Tablolar */
+table.data {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--font-data);
+  font-size: var(--fs-2);
+}
+table.data th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--ink-2);
+  font-size: var(--fs-1);
+  border-bottom: 1.5px solid var(--ink);
+  padding: 6px 8px;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+}
+table.data td {
+  border-bottom: 1px solid var(--rule);
+  padding: 5px 8px;
+  vertical-align: top;
+}
+table.data td.num,
+table.data th.num {
+  text-align: right;
+  white-space: nowrap;
+}
+table.data tr.total td {
+  border-top: 1.5px solid var(--ink);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

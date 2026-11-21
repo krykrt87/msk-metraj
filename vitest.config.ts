@@ -12,6 +12,7 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['shared/**/*.test.ts', 'scripts/**/*.test.ts', 'web/**/*.test.{ts,tsx}', 'functions/**/*.test.ts'],
+          setupFiles: ['web/test-setup.ts'],
           exclude: ['**/*.emu.test.ts', '**/node_modules/**'],
           environment: 'node',
         },
