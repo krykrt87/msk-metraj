@@ -55,10 +55,12 @@ export interface Item {
 /**
  * Metraj cetveli satırı: adet × en × boy (yamukta ortalama en; daire parçasında r ve açı).
  * Uzunluk satırları: 'doğru' (boy), 'yay' (r × θ). 'duvar': en = kalınlık, boy = uzunluk.
+ * 'kalem': başka kalemin miktarı × adet (formüllü kalemler). 'sayım': blok/nesne sayımı.
+ * 'değer': çizimde yazılı ya da detaydan alınan sayı (kaynağı name'de).
  * value adet dahil, işaretli toplamdır; unit yoksa m².
  */
 export interface CalcRow {
-  kind: 'dikdörtgen' | 'yamuk' | 'daire parçası' | 'doğru' | 'yay' | 'duvar';
+  kind: 'dikdörtgen' | 'yamuk' | 'daire parçası' | 'doğru' | 'yay' | 'duvar' | 'kalem' | 'sayım' | 'değer';
   unit?: string;
   /** Parçanın ait olduğu eleman (ör. "Güney eğrisel kenar"); parça adının yanında gösterilir. */
   name?: string;

@@ -255,6 +255,21 @@ export function refitArcs(pts: Pt[], closed = true): { x: number; y: number; bul
   if (p.length > 1 && Math.hypot(p[0].x - p[p.length - 1].x, p[0].y - p[p.length - 1].y) < 1e-6) p.pop();
   if (!closed) return refitOpen(p);
   if (p.length < 3) return p.map((q) => ({ ...q, bulge: 0 }));
+  // tam daire: tüm noktalar tek çemberde, kirişler eşit → iki yarım daire
+  if (p.length >= 12) {
+    const c = circle3(p[0], p[Math.floor(p.length / 3)], p[Math.floor((2 * p.length) / 3)]);
+    if (c && c.r < 1e6) {
+      const ch = p.map((q, i) => Math.hypot(p[(i + 1) % p.length].x - q.x, p[(i + 1) % p.length].y - q.y));
+      const on = p.every((q) => Math.abs(Math.hypot(q.x - c.x, q.y - c.y) - c.r) <= TOL);
+      if (on && Math.max(...ch) <= Math.min(...ch) * 1.05 + 0.5) {
+        const s = Math.sign(cross(p[0], p[1], p[2])) || 1;
+        return [
+          { x: p[0].x, y: p[0].y, bulge: s },
+          { x: 2 * c.x - p[0].x, y: 2 * c.y - p[0].y, bulge: s },
+        ];
+      }
+    }
+  }
   // başlangıcı en keskin köşeye al (yay ortasında başlamasın)
   const n = p.length;
   let k0 = 0;
@@ -326,4 +341,33 @@ export function decomposeLength(pts: Pt[], closed: boolean): CalcRow[] {
     }
   }
   return rows;
+}
+
+/** Izgara maskesi (satır satır, nx sütun) → dikdörtgen cetveli; aynı sütun aralığındaki ardışık satırlar birleşir. */
+export function gridRects(mask: ArrayLike<number>, nx: number, ny: number, cellM: number): CalcRow[] {
+  const out: CalcRow[] = [];
+  let open = new Map<string, number>();
+  for (let r = 0; r <= ny; r++) {
+    const cur = new Map<string, number>();
+    if (r < ny)
+      for (let c = 0; c < nx; ) {
+        if (!mask[r * nx + c]) {
+          c++;
+          continue;
+        }
+        const c0 = c;
+        while (c < nx && mask[r * nx + c]) c++;
+        const k = `${c0},${c}`;
+        cur.set(k, open.get(k) ?? r);
+      }
+    for (const [k, r0] of open)
+      if (cur.get(k) !== r0) {
+        const [c0, c1] = k.split(',').map(Number);
+        const en = mm3((c1 - c0) * cellM);
+        const boy = mm3((r - r0) * cellM);
+        out.push({ kind: 'dikdörtgen', label: 'ızgara dikdörtgeni', adet: 1, en, boy, sign: 1, value: en * boy });
+      }
+    open = cur;
+  }
+  return mergeRows(out).sort((a, b) => b.value - a.value);
 }

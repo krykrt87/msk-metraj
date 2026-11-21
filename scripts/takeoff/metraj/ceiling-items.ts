@@ -7,7 +7,7 @@
 import { readDxf, type RawDxf, type RawEnt } from '../lib/dxf';
 import { flatten, type Flat } from '../lib/flatten';
 import { area, bbox, pointInPolygon, regionArea, type P } from '../lib/geom';
-import { decomposeRegion, mergeRows, type CalcRow } from '../lib/decompose';
+import { decomposeRegion, gridRects, mergeRows, type CalcRow } from '../lib/decompose';
 import { extractRooms, type RoomLabel, type RoomPoly } from '../rooms';
 import type { Line, Source, TakeoffItem } from './model';
 
@@ -120,6 +120,14 @@ function raster(list: P[][][]): Uint8Array {
     }
   }
   return g;
+}
+/** İki ızgaranın kesişimi → dikdörtgen cetveli (eksi). */
+function overlapRects(a: Uint8Array, b: Uint8Array): CalcRow[] {
+  const [x0, , x1] = WIN.L;
+  const W = Math.ceil((x1 - x0) / RASTER);
+  const m = new Uint8Array(a.length);
+  for (let i = 0; i < a.length; i++) m[i] = a[i] && b[i] ? 1 : 0;
+  return gridRects(m, W, a.length / W, RASTER / 1000).map((r) => ({ ...r, sign: -1, value: -r.value }));
 }
 const overlapM2 = (a: Uint8Array, b: Uint8Array) => {
   let n = 0;
@@ -327,15 +335,16 @@ export function ceilingItems(
   for (const h of m03) {
     const b = bbox(h.loops.flat());
     const len = Math.max(b.maxX - b.minX, b.maxY - b.minY) / 1000;
-    m03Len += len;
+    m03Len += Math.round(len * 1000) / 1000;
     const hall = hallOf(h);
     const key = hall ? lname(hall) : `hatch #${h.idx} – mahal bulunamadı`;
     const k = (stripNo.get(key) ?? 0) + 1;
     stripNo.set(key, k);
     const ch = hall ? hallCH.get(hall.code!) ?? '' : '';
-    m03Lines.push({ label: `${key} şerit ${k} (üst tavan planı${ch ? `, CH ${ch}` : ''})`, value: r2(len), unit: 'm', note: `genişlik ${Math.round((h.area * 1e6) / (len * 1000))} mm, alan ${tr(h.area)} m² · ${noteOf(h)}` });
+    const lenR = Math.round(len * 1000) / 1000;
+    m03Lines.push({ label: `${key} şerit ${k} (üst tavan planı${ch ? `, CH ${ch}` : ''})`, value: r2(lenR), unit: 'm', calc: [{ kind: 'doğru', unit: 'm', label: 'şerit', name: 'şerit dikdörtgeninin uzun kenarı', adet: 1, boy: lenR, sign: 1, value: lenR }], note: `genişlik ${Math.round((h.area * 1e6) / (len * 1000))} mm, alan ${tr(h.area)} m² · ${noteOf(h)}` });
   }
-  m03Lines.push({ label: 'Toplam şerit alanı (bilgi)', value: r2(sum(m03)), unit: 'm²', note: `${m03.length} şerit, SOLID taramaların toplam alanı` });
+  m03Lines.push({ label: 'Toplam şerit alanı (bilgi)', value: r2(sum(m03)), unit: 'm²', note: `${m03.length} şerit, SOLID taramaların toplam alanı`, calc: mergeRows(m03.flatMap((h) => h.calc)) });
   mk(7, 'C-M03', 'Alüminyum kanal (lineer)', 'm', m03Len,
     `C-M03, üst tavan planında büyük salonlardaki ahşap modül sıraları arasındaki 350 mm genişliğinde SOLID dolgulu şeritlerdir (katman A_Mat_Mtal; lejant örneği de A_Mat_Mtal SOLID). Her şeridin uzunluğu dikdörtgen sınırının uzun kenarından alındı; alan bilgi satırı olarak verildi. Şerit dış çizgileri (A_Mat_Mtal kapalı çizgileri) ayrıca sayılmadı. ${COMMON} ${EXCL}`,
     srcOf(m03), 'Yüksek', m03Lines);
@@ -349,7 +358,7 @@ export function ceilingItems(
     const a = d.room.labelArea ?? 0;
     if (d.tag.text !== 'C-P01') continue;
     p01Extra += a;
-    p01Lines.push({ label: `${lname(d.room)} (alt tavan planı${d.ch ? `, CH ${chOf(d.ch)}` : ''})`, value: r2(a), unit: 'm²', note: 'tarama yok, mahal etiketi alanı; C-P01 kod etiketi ve CH etiketi komşu mutfak taramasının içine kaymış' });
+    p01Lines.push({ label: `${lname(d.room)} (alt tavan planı${d.ch ? `, CH ${chOf(d.ch)}` : ''})`, value: r2(a), unit: 'm²', calc: [{ kind: 'değer', unit: 'm²', label: 'etiket', name: 'mahal etiketindeki alan', adet: 1, sign: 1, value: a }], note: 'tarama yok, mahal etiketi alanı; C-P01 kod etiketi ve CH etiketi komşu mutfak taramasının içine kaymış' });
   }
   p01Lines.push(...lin(p01U));
   mk(8, 'C-P01', 'Sıva + boya tavan', 'm²', sum(p01L) + p01Extra + sum(p01U),
@@ -398,13 +407,15 @@ export function ceilingItems(
   const b01Lines: Line[] = lin(b01).map((l) => ({ ...l, label: `Brüt: ${l.label}` }));
   let ovTot = 0;
   for (const h of lowerH) {
-    const ov = overlapM2(raster([h.loops]), gB);
+    const rh = raster([h.loops]);
+    const ov = overlapM2(rh, gB);
     if (ov < 0.01) continue;
+    const ovCalc = overlapRects(rh, gB);
     ovTot += ov;
-    b01Lines.push({ label: `− ${roomOf(h)} üstü (alt tavan ${h.code}, ${tr(h.area)} m²)`, value: -r2(ov), unit: 'm²', note: `alçak kutu tavanının üstünde kalan baffle alanı; ${RASTER / 1000} m ızgara ile ölçüldü · tarama #${h.idx}` });
+    b01Lines.push({ label: `− ${roomOf(h)} üstü (alt tavan ${h.code}, ${tr(h.area)} m²)`, value: -r2(ov), unit: 'm²', calc: ovCalc, note: `alçak kutu tavanının üstünde kalan baffle alanı; ${RASTER / 1000} m ızgara ile ölçüldü · tarama #${h.idx}` });
   }
   const b01Net = sum(b01) - ovTot;
-  b01Lines.push({ label: 'Net C-B01', value: r2(b01Net), unit: 'm²' });
+  b01Lines.push({ label: 'Net C-B01', value: r2(b01Net), unit: 'm²', note: 'yukarıdaki satırların toplamı' });
   mk(12, 'C-B01', 'Alüminyum baffle tavan', 'm²', b01Net,
     `C-B01, üst tavan planında ANSI32 desenli taramalardır (katman A_Mat_Tmbr; lejant örneği de A_Mat_Tmbr ANSI32): ana fuaye, küçük fuaye ve doğu koridoru (CH 532). Fuaye taraması, alt tavan planında kendi alçak tavanı olan kutuların (rüzgarlık, vestiyerler, salon girişleri) üstünden de geçer; bu kısım üst ve alt plan taramalarının ${RASTER / 1000} m ızgarada kesişiminden ölçülüp brüt alandan düşüldü (net). ${COMMON} ${EXCL}`,
     srcOf(b01), 'Orta', b01Lines,

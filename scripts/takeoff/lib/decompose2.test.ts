@@ -20,6 +20,22 @@ describe('refitArcs', () => {
   });
 });
 
+describe('tam daire', () => {
+  it('kapanış noktası olmayan 360 noktalı daire de iki yarım daire', () => {
+    const c = sampleArc(M(3, 3), 250, 0, 2 * Math.PI).slice(0, 360);
+    const rows = decomposeRegion([c]);
+    expect(rows).toHaveLength(2);
+    expect(rows.reduce((t, r) => t + r.value, 0)).toBeCloseTo(Math.PI * 0.25 ** 2, 9);
+  });
+  it('örneklenmiş daire iki yarım daire olur', () => {
+    const c = sampleArc(M(3, 3), 250, 0.3, 0.3 + 2 * Math.PI);
+    const rows = decomposeRegion([c]);
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.kind === 'daire parçası' && Math.abs((r.angle ?? 0) - 180) < 1e-6)).toBe(true);
+    expect(rows.reduce((t, r) => t + r.value, 0)).toBeCloseTo(Math.PI * 0.25 ** 2, 9);
+  });
+});
+
 describe('decomposeRegion', () => {
   it('boşluk eksi satır olarak düşülür', () => {
     const rows = decomposeRegion([sq(0, 0, 10, 8), sq(2, 2, 3, 3)]);

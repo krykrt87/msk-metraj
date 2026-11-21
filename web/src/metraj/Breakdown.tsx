@@ -75,7 +75,7 @@ export function Breakdown({ item }: { item: Item }) {
                         {r.sign < 0 ? '(−) ' : ''}
                         {partTitle(r)}
                       </td>
-                      <td className="num">{r.adet}</td>
+                      <td className="num">{formatTr(r.adet, Number.isInteger(r.adet) ? 'adet' : undefined)}</td>
                       {cols.map((c) => (
                         <td key={c.key} className="num">
                           {c.cell(r)}

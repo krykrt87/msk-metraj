@@ -122,7 +122,7 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
     ).sort((a, b) => b.adet - a.adet);
     const L = calc.reduce((s, r) => s + r.value, 0) / H;
     devL += L;
-    doorL += wide.reduce((s, b) => s + b, 0);
+    doorL += wide.reduce((s, b) => s + Math.round(b * 1000) / 1000, 0);
     if (L > 0)
       glassLines.push({
         label: `Cam hattı ${i + 1}: ${normal.length} bölme, başlangıç (${(c.pts[0].x / 1000).toFixed(1)}; ${(c.pts[0].y / 1000).toFixed(1)}) m`,
@@ -137,7 +137,7 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
   glassLines.push(...extra.map((l) => ({ ...l, note: 'düzlemsel cephe; görünüş alanı = gerçek alan' })));
   const extraA = sum(extra);
   const projGlass = sum([...elevLines('FG-01 glass'), ...elevLines('FG-01? slot glazing (unlabelled)')]);
-  for (const l of elevLines('FG-01 glass').filter((x) => !x.label.startsWith('Kuzeybatı'))) glassLines.push({ ...l, calc: undefined, label: 'Karşılaştırma (katılmadı) – ' + l.label, note: 'eğrisel güney camının bu görünüşteki izdüşümü; zincirle zaten sayıldı' });
+  for (const l of elevLines('FG-01 glass').filter((x) => !x.label.startsWith('Kuzeybatı'))) glassLines.push({ ...l, label: 'Karşılaştırma (katılmadı) – ' + l.label, note: 'eğrisel güney camının bu görünüşteki izdüşümü; zincirle zaten sayıldı' });
   items.push({
     poz: 'C.1', group: 'C', code: 'FG-01', name: 'Cam giydirme cephe (gerçek açınım alanı)', unit: 'm²', value: r2(devL * H + extraA),
     method: `Zemin kat planındaki cam cephe dikmeleri (blok 4199_AMG_Glass new2 içindeki "cephe profıl" ve dinamik dikme blokları) cephe boyunca zincirlendi; ardışık dikmeler arası mesafeler toplanarak eğrisel cephenin gerçek uzunluğu bulundu. 2,0 m'den geniş bölmeler kapı bölmesi sayılıp ayrıldı. Cam yüksekliği görünüş ve kesitlerden ${H} m (+0,10 → +5,45). Dikme zincirinde olmayan düzlemsel camlar (kuzeybatı arka cephe, kuzeydoğu taş arası dar camlar) görünüş alanlarından eklendi. Güneydoğu/kuzeydoğu/güneybatı görünüşlerindeki cam, eğrisel güney camının izdüşümü olduğu için karşılaştırma satırı olarak verildi, toplama katılmadı.`,
@@ -152,7 +152,7 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
     method: 'Cam cephe dikme zincirinde 2,0 m\'den geniş bölmeler (giriş kapıları) toplandı. Kapı tipleri ve kanat sayıları için H grubu ve görünüşler.',
     sources: [{ drawing: '4199-A-DD-01-02-100', where: 'blok 4199_AMG_Glass new2 · dikme aralıkları > 2,0 m' }],
     confidence: 'Düşük',
-    lines: chains.flatMap((c, i) => c.bays.filter((b) => b > 2.0).map((b) => ({ label: `Cam hattı ${i + 1} – geniş bölme`, value: r2(b), unit: 'm' }))),
+    lines: chains.flatMap((c, i) => c.bays.filter((b) => b > 2.0).map((b) => { const L = Math.round(b * 1000) / 1000; return { label: `Cam hattı ${i + 1} – geniş bölme`, value: r2(L), unit: 'm', calc: [{ kind: 'doğru' as const, unit: 'm', label: 'bölme', name: 'iki dikme arası mesafe', adet: 1, boy: L, sign: 1 as const, value: L }] }; })),
   });
 
   // --- Görünüş alanından gelen kalemler
@@ -188,7 +188,7 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
       method: `Bant yüksekliği (${h} m, görünüş kotlarından) × saçak serbest kenar uzunluğu (B.7, çatı planından, eğrisel kenar yay uzunluğuyla). Görünüşlerdeki izdüşüm alanları karşılaştırma için satırlarda.`,
       sources: [{ drawing: '4199-A-DD-01-02-300', where: 'saçak serbest kenarı (B.7)' }, ...elevSources],
       confidence: 'Orta',
-      lines: [...ls.map((l) => ({ ...l, calc: undefined, label: `Karşılaştırma – ${l.label}` })), { label: 'Görünüş izdüşüm toplamı (miktara katılmadı)', value: sum(ls), unit: 'm²' }],
+      lines: [...ls.map((l) => ({ ...l, label: `Karşılaştırma – ${l.label}` })), { label: 'Görünüş izdüşüm toplamı (miktara katılmadı)', value: sum(ls), unit: 'm²', note: 'yukarıdaki karşılaştırma satırlarının toplamı' }],
       notes: ['Sistem detayında (00-09-100) saçak alnı tek parça FP-03 alüminyum levha (yüz 2,11 m) olarak çizilmiş; görünüşte bantlara ayrılmış ve FM kodlarıyla etiketlenmiş.'],
     });
   }

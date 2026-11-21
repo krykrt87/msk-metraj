@@ -42,7 +42,7 @@ async function main() {
     poz: 'F.1', group: 'F', name: 'Halı kaplama – salonlar ve küçük salonlar', unit: 'm²', value: Math.round(carpet.reduce((s, r) => s + r.area, 0) * 100) / 100,
     method: 'Döşeme detayında (00-09-100) HALI KAPLAMA / ŞAP / SAHA BETONU dizilimi salon kesitinde gösteriliyor. Halı, Salon 01/02/03 ve Küçük Salon 01/02/03 mahallerinin net alanlarına (mahal sınırlarından) uygulandı.',
     sources: [{ drawing: '4199-A-DD-00-09-100', where: 'döşeme dizilimi (HALI KAPLAMA 10 mm)' }, { drawing: '4199-A-DD-01-02-100', where: 'mahal sınırları A_Nplt_Area' }],
-    confidence: 'Orta', lines: carpet.map((r) => ({ label: `${r.code} ${r.name}`, value: Math.round(r.area * 100) / 100, unit: 'm²' })),
+    confidence: 'Orta', lines: carpet.map((r) => ({ label: `${r.code} ${r.name}`, value: Math.round(r.area * 100) / 100, unit: 'm²', calc: r.calc })),
     notes: ['Detay yalnız salon kesitinde; küçük salonlarda da halı varsayıldı.'],
   });
   items.push({
@@ -91,6 +91,7 @@ async function main() {
       }
     }
   }
+  const formulaDone = new Set<string>();
   // "uzunluk × yükseklik" formülleri (ör. B.7 * 0,45): uzunluk kaleminin parçaları × yükseklik cetveli
   for (const i of items) {
     const m = /^([A-Z]\.\d+(?:\.\d+)?) \* (\d+(?:,\d+)?)$/.exec(i.formula ?? '');
@@ -105,6 +106,38 @@ async function main() {
     );
     const v = Math.round(calc.reduce((s, r) => s + r.value, 0) * 100) / 100;
     i.lines.unshift({ label: `${ref.poz} ${ref.name} × ${m[2]} m`, value: v, unit: 'm²', note: `her parça: yükseklik ${m[2]} m × ${ref.poz} satırındaki uzunluk`, calc });
+    formulaDone.add(i.poz);
+  }
+  // diğer formüller (ör. "B.3 + B.4", "A.1 - F.1", "C.4 * 2"): her terim bir 'kalem' satırı
+  for (const i of items) {
+    if (!i.formula || formulaDone.has(i.poz)) continue;
+    const terms = i.formula.split(/\s*(?=[+-]\s)/).map((t) => t.trim());
+    const calc: CalcRow[] = [];
+    for (const t of terms) {
+      const m = /^([+-])?\s*([A-Z]\.\d+(?:\.\d+)?)(?:\s*\*\s*(\d+(?:,\d+)?))?$/.exec(t);
+      const ref = m ? items.find((x) => x.poz === m[2]) : undefined;
+      if (!m || !ref || ref.value === null) {
+        calc.length = 0;
+        break;
+      }
+      const sign = m[1] === '-' ? -1 : 1;
+      const n = m[3] ? Number(m[3].replace(',', '.')) : 1;
+      calc.push({ kind: 'kalem', unit: i.unit, label: ref.poz, name: `${ref.poz} ${ref.name}`, adet: n, sign, value: sign * n * ref.value });
+    }
+    if (calc.length) i.lines.unshift({ label: `Formül: ${i.formula}`, value: Math.round(calc.reduce((s, r) => s + r.value, 0) * 100) / 100, unit: i.unit, note: 'başvurulan kalemlerin güncel miktarları', calc });
+  }
+  for (const i of items) {
+    i.lines.forEach((l, k) => {
+      if (l.calc?.length || l.value === null) return;
+      // ara toplam satırları: önceki satırların toplamı
+      if (l.note?.startsWith('yukarıdaki')) {
+        const only = l.note.includes('karşılaştırma');
+        l.calc = i.lines.slice(0, k).filter((p) => p.value !== null && p.unit === l.unit && (!only || p.label.startsWith('Karşılaştırma'))).map((p) => ({ kind: 'kalem' as const, unit: p.unit, label: p.label, name: p.label, adet: 1, sign: ((p.value ?? 0) < 0 ? -1 : 1) as 1 | -1, value: p.value ?? 0 }));
+        return;
+      }
+      // sayım satırları
+      if (l.unit === 'adet') l.calc = [{ kind: 'sayım', unit: 'adet', label: l.label, adet: l.value, sign: 1, value: l.value }];
+    });
   }
   for (const i of items.filter((x) => x.formula && !(x.poz in vals))) findings.push({ topic: 'Formül', drawings: '-', finding: `${i.poz} formülü hesaplanamadı: ${i.formula}`, suggestion: 'Başvurulan kalemi kontrol edin.' });
 

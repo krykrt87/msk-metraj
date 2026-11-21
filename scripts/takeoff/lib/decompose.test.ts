@@ -52,3 +52,15 @@ describe('decomposeArea', () => {
     expect(rows.find((x) => x.kind === 'daire parçası')!.sign).toBe(-1);
   });
 });
+
+import { gridRects } from './decompose';
+describe('gridRects', () => {
+  it('ızgara hücrelerini dikdörtgenlere ayırır, toplam alan korunur', () => {
+    // 4×3 ızgara: L şekli
+    const m = new Uint8Array([1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0]);
+    const rows = gridRects(m, 4, 3, 0.5);
+    expect(rows.reduce((s, r) => s + r.value, 0)).toBeCloseTo(8 * 0.25, 9);
+    expect(rows.every((r) => r.kind === 'dikdörtgen')).toBe(true);
+    expect(rows).toHaveLength(2);
+  });
+});

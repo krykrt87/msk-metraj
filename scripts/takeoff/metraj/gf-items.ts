@@ -3,7 +3,7 @@ import { extractDoors } from '../doors';
 import type { RawDxf } from '../lib/dxf';
 import type { Flat } from '../lib/flatten';
 import { area, bbox, length, pointInPolygon, regionArea, type P } from '../lib/geom';
-import { decomposeArea, mergeRows, type CalcRow } from '../lib/decompose';
+import { decomposeArea, decomposeLength, decomposeRegion, mergeRows, type CalcRow } from '../lib/decompose';
 import type { RoomRow, TakeoffItem } from './model';
 
 const GF = '4199-A-DD-01-02-100';
@@ -39,7 +39,8 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     confidence: 'Yüksek',
     lines: mfRooms.map(roomLine),
   });
-  const per = length(plate.pts, true) / 1000;
+  const perCalc = mergeRows(decomposeLength(plate.pts, true));
+  const per = perCalc.reduce((t, r) => t + r.value, 0); // yaylar tam (r × θ)
   items.push({
     poz: 'A.3', group: 'A', name: 'Zemin kat brüt alanı (dış yüzden)', unit: 'm²', value: r2(plate.area),
     method:
@@ -48,7 +49,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     confidence: 'Yüksek',
     lines: [
       { label: 'Kat genel sınırı alanı', value: r2(plate.area), unit: 'm²', calc: decomposeArea(plate.verts ?? plate.pts.map((q) => ({ ...q, bulge: 0 }))) },
-      { label: 'Plandaki not', value: 6886.9, unit: 'm²', note: 'Zemin Kat Toplam (A_Anno_Text_1)' },
+      { label: 'Plandaki not (karşılaştırma)', value: 6886.9, unit: 'm²', note: 'Zemin Kat Toplam (A_Anno_Text_1)', calc: [{ kind: 'değer', unit: 'm²', label: 'not', name: 'plandaki "Zemin Kat Toplam" yazısı', adet: 1, sign: 1, value: 6886.9 }] },
     ],
   });
   items.push({
@@ -56,7 +57,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     method: 'Kat genel sınırının çevresi (avlu yarım daireleri dahil, eğriler yay uzunluğuyla).',
     sources: [{ drawing: GF, where: 'blok 4199_AMH-Alanlar · katman A_Nplt_Area · kat genel sınırı' }],
     confidence: 'Yüksek',
-    lines: [{ label: 'Kat genel sınırı çevresi', value: r2(per), unit: 'm' }],
+    lines: [{ label: 'Kat genel sınırı çevresi', value: r2(per), unit: 'm', calc: perCalc }],
   });
 
   // --- Duvarlar (A_Patt_Wall taramaları)
@@ -121,7 +122,8 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
 
   // --- Hareketli bölme (movatech bloğu)
   const mov = flat.filter((f) => f.path.includes('movatech_hareetli_panel_plan_01'));
-  const track = mov.filter((f) => f.layer === 'A_Trce_Hidn' && f.pts).reduce((s, f) => s + length(f.pts!), 0) / 1000;
+  const trackCalc = mergeRows(mov.filter((f) => f.layer === 'A_Trce_Hidn' && f.pts).flatMap((f) => decomposeLength(f.pts!, !!f.closed)));
+  const track = trackCalc.reduce((t, r) => t + r.value, 0);
   const panelCount = (name: string) => mov.filter((f) => f.t === 'INSERT' && f.name === name).length;
   items.push({
     poz: 'G.4', group: 'G', name: 'Hareketli bölme – ray hattı uzunluğu (salonlar arası)', unit: 'm', value: r2(track),
@@ -129,7 +131,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     sources: [{ drawing: GF, where: 'blok movatech_hareetli_panel_plan_01 · katman A_Trce_Hidn' }],
     confidence: 'Yüksek',
     lines: [
-      { label: 'Ray hattı toplamı', value: r2(track), unit: 'm' },
+      { label: 'Ray hattı toplamı', value: r2(track), unit: 'm', calc: trackCalc },
       { label: 'Standart panel', value: panelCount('standart panel-1'), unit: 'adet' },
       { label: 'Kapalı teleskopik panel', value: panelCount('kapalı teleskopik panel-1'), unit: 'adet' },
       { label: 'Teleskopik panel', value: panelCount('teleskopik panel-1'), unit: 'adet' },
@@ -174,7 +176,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
 
   // --- Taşıyıcı kesitler
   const st = flat.filter((f) => top(f) === 'STRUCTURE_GF_NN' && f.layer === 'A_Stuc_Conc' && f.closed && f.pts);
-  const kinds = new Map<string, { n: number; inside: number; A: number }>();
+  const kinds = new Map<string, { n: number; inside: number; A: number; calc: CalcRow[] }>();
   for (const f of st) {
     const A = area(f.pts!) / 1e6;
     const b = bbox(f.pts!);
@@ -185,9 +187,11 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     else if (A < 0.6) k = `Betonarme kolon – diğer kesit ${A.toFixed(2)} m²`;
     else k = `Betonarme perde – kesit ${A.toFixed(2)} m²`;
     const c = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
-    const e = kinds.get(k) ?? { n: 0, inside: 0, A: 0 };
+    const e = kinds.get(k) ?? { n: 0, inside: 0, A: 0, calc: [] };
+    const rows = decomposeRegion([f.pts!]);
+    e.calc = mergeRows([...e.calc, ...rows]);
     e.n++;
-    e.A += A;
+    e.A += rows.reduce((t, r) => t + r.value, 0);
     if (pointInPolygon(c, plate.pts)) e.inside++;
     kinds.set(k, e);
   }
@@ -200,7 +204,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
       lines: [
         { label: 'Bina konturu içinde', value: e.inside, unit: 'adet' },
         { label: 'Bina konturu dışında (saçak/kanopi altı)', value: e.n - e.inside, unit: 'adet' },
-        { label: 'Toplam kesit alanı', value: r2(e.A), unit: 'm²' },
+        { label: 'Toplam kesit alanı', value: r2(e.A), unit: 'm²', calc: e.calc },
       ],
     });
   });

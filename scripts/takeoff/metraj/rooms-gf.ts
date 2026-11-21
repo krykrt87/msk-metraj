@@ -67,10 +67,12 @@ export function buildGfRooms(flat: Flat[], measureAt: (seed: P, half?: number, r
       } else if (l.labelArea !== null) {
         areaV = l.labelArea;
         src = 'etiket';
+        calc = [{ kind: 'değer', unit: 'm²', label: 'etiket', name: 'mahal etiketindeki alan (A_Anno_Rmname)', adet: 1, sign: 1, value: l.labelArea }];
         note = `Mahal sınırı çizilmemiş; etiket alanı alındı. Duvar iç yüzlerinden kontrol ölçümü: ${measured?.toFixed(2) ?? 'yapılamadı'} m².`;
       } else {
-        areaV = measured ?? 0;
         src = 'ölçüm';
+        calc = measuredCalc;
+        areaV = calc ? calc.reduce((t, x) => t + x.value, 0) : (measured ?? 0);
         note = 'Mahal sınırı ve alan etiketi yok; duvar iç yüzlerinden ölçüldü.';
       }
     }

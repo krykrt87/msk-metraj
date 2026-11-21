@@ -127,5 +127,10 @@ export function layerItems(): { items: TakeoffItem[]; findings: F[] } {
     { topic: 'Detay – rampa eğimi', drawings: '00-09-102', finding: 'Rampa detayı 03: geometri 450 mm / 11,41 m = %3,9, etiket "SLOPE %2".', suggestion: 'Eğim teyit edilmeli.' },
     { topic: 'Detay – tanımsız malzemeler', drawings: 'tüm detaylar', finding: 'Aşık ve çelik karkas ebatları, TPU/membran türleri, yalıtım türleri, çatı çimento levha kalınlığı, çakıl granülometrisi belirtilmemiş.', suggestion: 'Şartnamede tanımlanmalı.' },
   ];
+  // Detaydan / vaziyet planından okunan sabitler: 'değer' cetvel satırı (katman kalınlıkları (mm) dizilim bilgisidir, miktar değil)
+  for (const i of items)
+    for (const l of i.lines)
+      if (!l.calc && l.value !== null && l.unit !== 'mm' && l.unit !== 'adet')
+        l.calc = [{ kind: 'değer', unit: l.unit, label: l.label, name: i.poz === 'F.12' ? 'vaziyet planındaki rampa uzunluk yazısı' : 'detay paftasından ölçülen / yazılı değer', adet: 1, sign: 1, value: l.value }];
   return { items, findings };
 }

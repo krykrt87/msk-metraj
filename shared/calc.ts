@@ -17,6 +17,12 @@ export function partName(r: CalcRow): string {
       return 'Yay';
     case 'duvar':
       return 'Duvar parçası';
+    case 'kalem':
+      return 'Kalem';
+    case 'sayım':
+      return 'Sayım';
+    case 'değer':
+      return 'Yazılı değer';
   }
 }
 
@@ -34,6 +40,12 @@ export function partRule(r: CalcRow): string {
       return 'adet × r × θ (radyan)';
     case 'duvar':
       return r.unit === 'm' ? 'adet × boy (boy = taban alanı / kalınlık)' : 'adet × kalınlık × boy';
+    case 'kalem':
+      return r.adet === 1 ? 'kalemin miktarı' : 'adet × kalemin miktarı';
+    case 'sayım':
+      return 'çizimde sayılan nesne';
+    case 'değer':
+      return 'çizimde / detayda yazılı değer';
   }
 }
 

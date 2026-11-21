@@ -3,9 +3,29 @@
 import { readDxf, val, type RawDxf } from '../lib/dxf';
 import { cleanText, flatten, type Flat } from '../lib/flatten';
 import { area, bbox, length, pointInPolygon, type P } from '../lib/geom';
-import { decomposeLength, decomposeRegion, mergeRows, type CalcRow } from '../lib/decompose';
+import { decomposeLength, decomposeRegion, gridRects, mergeRows, type CalcRow } from '../lib/decompose';
 import type { Line, TakeoffItem } from './model';
 const exA = (l: P[]) => decomposeRegion([l]).reduce((t, r) => t + r.value, 0) * 1e6; // mm², cetvel toplamı
+const csum = (rows: CalcRow[]) => rows.reduce((t, r) => t + r.value, 0);
+/** Satırlardan ara toplam cetveli (her satır bir 'kalem' satırı). */
+const subtotal = (ls: Line[]): CalcRow[] => ls.map((l) => ({ kind: 'kalem', unit: l.unit, label: l.label, name: l.label, adet: 1, sign: (l.value ?? 0) < 0 ? -1 : 1, value: l.value ?? 0 }));
+/** Polyline'ın c0 → c1 (mm, baştan uzunluk) arasındaki parçası. */
+function subLine(pts: P[], c0: number, c1: number): P[] {
+  const out: P[] = [];
+  let acc = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    const L = Math.hypot(b.x - a.x, b.y - a.y);
+    const at = (c: number) => ({ x: a.x + ((b.x - a.x) * (c - acc)) / L, y: a.y + ((b.y - a.y) * (c - acc)) / L });
+    if (L > 0 && acc + L >= c0 && acc <= c1) {
+      if (!out.length) out.push(at(Math.max(c0, acc)));
+      out.push(acc + L <= c1 ? b : at(c1));
+    }
+    acc += L;
+  }
+  return out;
+}
 const neg = (rows: CalcRow[]): CalcRow[] => rows.map((r) => ({ ...r, sign: (-r.sign) as 1 | -1, value: -r.value }));
 const rc = (b: { minX: number; minY: number; maxX: number; maxY: number }): P[] => [{ x: b.minX, y: b.minY }, { x: b.maxX, y: b.minY }, { x: b.maxX, y: b.maxY }, { x: b.minX, y: b.maxY }];
 
@@ -134,14 +154,14 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
         const strip = w < 3;
         return { label: strip ? `Derz şeridi ${++si}` : `${['Batı', 'Orta', 'Doğu'][hi++] ?? ''} salon paneli`, value: r2(M2(area(f.pts!))), unit: 'm²', note: `${fmt(w)} × ${fmt(M(b.maxY - b.minY))} m`, calc: mergeRows(decomposeRegion([f.pts!])) };
       }),
-      { label: 'Birleşim dikdörtgeni (kontrol)', value: r2(M2(ukUnion)), unit: 'm²', note: 'toplamla aynı → örtüşme yok' },
+      { label: 'Birleşim dikdörtgeni (kontrol)', value: r2(M2(ukUnion)), unit: 'm²', note: 'toplamla aynı → örtüşme yok', calc: decomposeRegion([rc(ukB)]) },
     ],
     notes: ['01-02-100 / 01-02-200 paftalarındaki UZAY KAFES bloğu iki kopya içerir (zemin kat + asma kat ötelemesi); blok tanımları y yönünde 0,10 m farklı (43,00 m yerine 43,10 m).'],
   });
 
   // ---------------------------------------------------------------- B.2 salon çatı örtüsü
   const lineHatches = site.filter((f) => f.t === 'HATCH' && f.pattern === 'LINE' && f.loops);
-  const covering = sum(lineHatches.map((h) => area(h.loops![0])));
+  const covering = sum(lineHatches.map((h) => exA(h.loops![0])));
   const innerSum = sum(halls.map((h) => area(h.inner)));
   items.push({
     poz: 'B.2', group: 'B', name: 'Salon çatıları – çatı örtüsü alanı (parapet içi)', unit: 'm²', value: r2(M2(innerSum)),
@@ -154,7 +174,7 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
     confidence: 'Yüksek',
     lines: [
       ...halls.map((h): Line => ({ label: `${h.name} (parapet içi)`, value: r2(M2(area(h.inner))), unit: 'm²', note: `dış yüz ${fmt(M2(area(h.outer)))} m² · ${fmt(M(h.b.maxX - h.b.minX))} × ${fmt(M(h.b.maxY - h.b.minY))} m (dış)`, calc: decomposeRegion([h.inner]) })),
-      { label: 'Örtü taraması toplamı (bilgi, dere şeridi hariç)', value: r2(M2(covering)), unit: 'm²', note: `${lineHatches.length} üçgen LINE taraması; toplama katılmadı` },
+      { label: 'Örtü taraması toplamı (bilgi, dere şeridi hariç)', value: r2(M2(covering)), unit: 'm²', note: `${lineHatches.length} üçgen LINE taraması; toplama katılmadı`, calc: mergeRows(lineHatches.flatMap((h) => decomposeRegion([h.loops![0]]))) },
     ],
   });
 
@@ -163,10 +183,14 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
   const fb = bbox(outer);
   const step = 250;
   let outside = 0;
-  for (let x = fb.minX + step / 2; x < fb.maxX; x += step) for (let y = fb.minY + step / 2; y < fb.maxY; y += step) {
-    const p = { x, y };
-    if (inTerrace(p) && !pointInPolygon(p, facade.pts!)) outside++;
-  }
+  const gnx = Math.ceil((fb.maxX - fb.minX) / step);
+  const gny = Math.ceil((fb.maxY - fb.minY) / step);
+  const outMask = new Uint8Array(gnx * gny);
+  for (let gy = 0; gy < gny; gy++)
+    for (let gx = 0; gx < gnx; gx++) {
+      const p = { x: fb.minX + (gx + 0.5) * step, y: fb.minY + (gy + 0.5) * step };
+      if (inTerrace(p) && !pointInPolygon(p, facade.pts!)) ((outMask[gy * gnx + gx] = 1), outside++);
+    }
   const outsideM2 = (outside * step * step) / 1e6;
   items.push({
     poz: 'B.3', group: 'B', name: 'Betonarme teras çatı (çakıllı) +7,10 – net alan', unit: 'm²', value: r2(M2(netGravel)),
@@ -181,8 +205,8 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
       { label: 'Dış halka (parapet iç yüzü)', value: r2(M2(exA(outer))), unit: 'm²', note: `çevre ${fmt(M(length(outer, true)))} m`, calc: mergeRows(decomposeRegion([outer])) },
       { label: 'Eksi: salon bloğu (3 salon + derzler)', value: r2(-M2(exA(hallBlock))), unit: 'm²', note: `${fmt(M(bbox(hallBlock).maxX - bbox(hallBlock).minX))} × ${fmt(M(bbox(hallBlock).maxY - bbox(hallBlock).minY))} m`, calc: neg(mergeRows(decomposeRegion([hallBlock]))) },
       ...voids.map((v): Line => ({ label: `Eksi: ${v.label}`, value: r2(-M2(exA(v.loop))), unit: 'm²', note: 'dış yüz; gökyüzüne açık', calc: neg(mergeRows(decomposeRegion([v.loop]))) })),
-      { label: 'Net çakıllı teras', value: r2(M2(netGravel)), unit: 'm²' },
-      { label: 'Bunun cephe hattı dışında kalan kısmı (bilgi)', value: r2(outsideM2), unit: 'm²', note: '0,25 m ızgarayla; çatı planındaki cephe hattına göre (Catı_su_tahliye / A_Anno_Axis, 6.902,15 m²)' },
+      { label: 'Net çakıllı teras', value: r2(M2(netGravel)), unit: 'm²', note: 'yukarıdaki satırların toplamı' },
+      { label: 'Bunun cephe hattı dışında kalan kısmı (bilgi)', value: r2(outsideM2), unit: 'm²', calc: gridRects(outMask, gnx, gny, step / 1000), note: '0,25 m ızgarayla; çatı planındaki cephe hattına göre (Catı_su_tahliye / A_Anno_Axis, 6.902,15 m²)' },
     ],
     notes: [
       `Teras alanının yaklaşık ${fmt(outsideM2)} m²'si cephe hattının dışında kalıyor: güney eğrisel cephe ile parapet arasındaki örtülü dış bant ve kuzey servis girişi girintisi. Zemin kat brüt sınırına (01-02-100, 6.886,53 m²) göre bağımsız kontrol: ≈633,5 m². Bu alanın altında soffit/tavan kaplaması gerekir.`,
@@ -203,7 +227,7 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
     confidence: 'Yüksek',
     lines: [
       { label: 'Çakıllı alan (tarama, parapet içi)', value: r2(M2(area(neHatch.loops![0]))), unit: 'm²', note: `${fmt(M(neB.maxX - neB.minX))} × ${fmt(M(neB.maxY - neB.minY))} m`, calc: decomposeRegion(neHatch.loops!) },
-      { label: 'Dış dikdörtgen (bilgi)', value: r2(M2(area(neOuter.pts!))), unit: 'm²', note: `${fmt(M(neOB.maxX - neOB.minX))} × ${fmt(M(neOB.maxY - neOB.minY))} m` },
+      { label: 'Dış dikdörtgen (bilgi)', value: r2(M2(area(neOuter.pts!))), unit: 'm²', note: `${fmt(M(neOB.maxX - neOB.minX))} × ${fmt(M(neOB.maxY - neOB.minY))} m`, calc: decomposeRegion([neOuter.pts!]) },
     ],
   });
   const nwPl = site.filter((f) => f.layer === 'A_Elev_1' && f.t === 'PLINE' && !f.closed && f.pts!.length === 3 && (() => { const b = bbox(f.pts!); return b.minX < 640e3 && b.minY > 6019e3 && b.maxX > 659e3; })());
@@ -222,7 +246,7 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
     confidence: 'Düşük',
     lines: [
       { label: 'Parapet içi alan', value: r2(M2(rectA(nwI))), unit: 'm²', note: `${fmt(M(nwI.maxX - nwI.minX))} × ${fmt(M(nwI.maxY - nwI.minY))} m`, calc: decomposeRegion([rc(nwI)]) },
-      { label: 'Dış yüz alanı (bilgi)', value: r2(M2(rectA(nwO))), unit: 'm²', note: `${fmt(M(nwO.maxX - nwO.minX))} × ${fmt(M(nwO.maxY - nwO.minY))} m` },
+      { label: 'Dış yüz alanı (bilgi)', value: r2(M2(rectA(nwO))), unit: 'm²', note: `${fmt(M(nwO.maxX - nwO.minX))} × ${fmt(M(nwO.maxY - nwO.minY))} m`, calc: decomposeRegion([rc(nwO)]) },
     ],
     notes: ['Kaplama (çakıl / yürünebilir döşeme) ve erişim mimarla teyit edilmeli.'],
   });
@@ -250,7 +274,8 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
   ];
   const canopyPoly = [...canopyEdge.flatMap((s) => s.pts), ...parapetOut.flat()];
   const canopyA = exA(canopyPoly);
-  const canopyL = sum(canopyEdge.map((s) => length(s.pts)));
+  const edgeCalc = canopyEdge.map((s) => decomposeLength(s.pts, false));
+  const canopyL = sum(edgeCalc.map(csum)) * 1000;
   const arcDup = site.filter((f) => f.t === 'ARC' && f.pts && Math.abs(length(f.pts) - length(canopyEdge[2].pts)) < 20 && near(f.pts[0], 606.04, 5974.22));
   items.push({
     poz: 'B.6', group: 'B', name: 'Saçak (kanopi) – izdüşüm alanı', unit: 'm²', value: r2(M2(canopyA)),
@@ -260,7 +285,7 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
     confidence: 'Orta',
     lines: [
       { label: 'Saçak çokgeni (serbest kenar ↔ parapet dış yüzü)', value: r2(M2(canopyA)), unit: 'm²', calc: mergeRows(decomposeRegion([canopyPoly])) },
-      { label: 'Serbest kenar uzunluğu (bilgi, bkz. B.7)', value: r2(M(canopyL)), unit: 'm' },
+      { label: 'Serbest kenar uzunluğu (bilgi, bkz. B.7)', value: r2(M(canopyL)), unit: 'm', calc: edgeCalc.flat() },
     ],
     notes: [`Saçak yayı ${arcDup.length} kez çizilmiş (A_Elev_1 + A_Elev_3); tek sayıldı.`],
   });
@@ -269,7 +294,7 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
     method: 'Saçağın binadan bağımsız (serbest) kenarı: güney eğrisel yay ile batı ve doğu dönüşleri, ve parapete bağlanan iki kısa parça. Uzunluklar SITEPLAN_L / A_Elev_1 çizgilerinden ölçüldü; yay örneklenmiş noktalarla ölçüldü. Yinelenen A_Elev_3 yayı hariç tutuldu.',
     sources: [{ drawing: ROOF, where: 'blok SITEPLAN_L · katman A_Elev_1 · 1 ARC + 4 LINE' }],
     confidence: 'Orta',
-    lines: canopyEdge.map((s): Line => ({ label: s.label, value: r2(M(length(s.pts))), unit: 'm', note: `${xy(s.pts[0])} → ${xy(s.pts[s.pts.length - 1])}`, calc: decomposeLength(s.pts, false) })),
+    lines: canopyEdge.map((s, k): Line => ({ label: s.label, value: r2(csum(edgeCalc[k])), unit: 'm', note: `${xy(s.pts[0])} → ${xy(s.pts[s.pts.length - 1])}`, calc: edgeCalc[k] })),
   });
 
   // ---------------------------------------------------------------- B.8 teras parapetleri
@@ -286,15 +311,32 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
   const southL = sum(southChain.map((p) => length(p)));
   const neInt = 2 * (neOB.maxX - neOB.minX + (neOB.maxY - neOB.minY)) - neBoxL;
   const nwInt = 2 * (nwO.maxX - nwO.minX + (nwO.maxY - nwO.minY)) - nwBoxL;
-  const voidL = sum(voids.map((v) => length(v.loop, true)));
+  const voidCalc = voids.flatMap((v) => mergeRows(decomposeLength(v.loop, true)));
+  const southCalc = southChain.flatMap((p) => decomposeLength(p, false));
+  const part = (c0: number, c1: number) => mergeRows(decomposeLength(subLine(g, c0, c1), false));
+  const westCalc = part(ch(639.47, 6022.13), gTot);
+  const northCalc = part(ch(715.27, 6025.68), ch(659.77, 6025.68));
+  const eastCalc = part(ch(722.97, 5981.58), ch(715.27, 6016.78));
+  const neBoxCalc = part(ch(715.27, 6016.78), ch(715.27, 6025.68));
+  const nwBoxCalc = part(ch(659.77, 6025.68), ch(639.47, 6022.13));
+  const box = (b: ReturnType<typeof bbox>, name: string): CalcRow[] => {
+    const w = Math.round(b.maxX - b.minX) / 1000;
+    const h = Math.round(b.maxY - b.minY) / 1000;
+    return [
+      { kind: 'doğru', unit: 'm', label: name, name: `${name} kutusu yatay kenar`, adet: 2, boy: w, sign: 1, value: 2 * w },
+      { kind: 'doğru', unit: 'm', label: name, name: `${name} kutusu düşey kenar`, adet: 2, boy: h, sign: 1, value: 2 * h },
+    ];
+  };
+  const named = (rows: CalcRow[], name: string) => rows.map((r) => ({ ...r, name }));
+  const intCalc = [...box(neOB, 'KD'), ...neg(named(neBoxCalc, 'KD dış kenar (yukarıdaki satırda)')), ...box(nwO, 'KB'), ...neg(named(nwBoxCalc, 'KB dış kenar (yukarıdaki satırda)'))];
   const parLines: Line[] = [
-    { label: 'Güney eğrisel parapet (dış yüz)', value: r2(M(southL)), unit: 'm', note: 'SITEPLAN_L / A_Elev_1 yay + kırıklar; iç yüz ≈202,20 m', calc: southChain.flatMap((p) => decomposeLength(p, false)) },
-    { label: 'Batı (yıldız) cephe parapeti (dış yüz)', value: r2(M(westL)), unit: 'm', note: 'cephe dış yüz çizgisinden' },
-    { label: 'Kuzey cephe parapeti, MF-01 üstü (dış yüz)', value: r2(M(northL)), unit: 'm' },
-    { label: 'Doğu kademeli cephe parapeti (dış yüz)', value: r2(M(eastL)), unit: 'm', note: 'parapet bandı 0,40 m; bant çevresi 99,18 m iki yüzü birden içerir' },
-    { label: '+3,70 alçak çatıların dış kenarları (KD + KB)', value: r2(M(neBoxL + nwBoxL)), unit: 'm', note: `KD ${fmt(M(neBoxL))} + KB ${fmt(M(nwBoxL))}` },
-    { label: '+7,10 → +3,70 iç kademe duvarları', value: r2(M(neInt + nwInt)), unit: 'm', note: `KD ${fmt(M(neInt))} + KB ${fmt(M(nwInt))}; terasın alçak çatıya bakan kenarı` },
-    { label: 'Boşluk çevre duvarları (2 daire + avlu, dış yüz)', value: r2(M(voidL)), unit: 'm', note: voids.map((v) => fmt(M(length(v.loop, true)))).join(' + '), calc: voids.flatMap((v) => mergeRows(decomposeLength(v.loop, true))) },
+    { label: 'Güney eğrisel parapet (dış yüz)', value: r2(csum(southCalc)), unit: 'm', note: 'SITEPLAN_L / A_Elev_1 yay + kırıklar; iç yüz ≈202,20 m', calc: southCalc },
+    { label: 'Batı (yıldız) cephe parapeti (dış yüz)', value: r2(csum(westCalc)), unit: 'm', note: 'cephe dış yüz çizgisinden', calc: westCalc },
+    { label: 'Kuzey cephe parapeti, MF-01 üstü (dış yüz)', value: r2(csum(northCalc)), unit: 'm', calc: northCalc },
+    { label: 'Doğu kademeli cephe parapeti (dış yüz)', value: r2(csum(eastCalc)), unit: 'm', note: 'parapet bandı 0,40 m; bant çevresi 99,18 m iki yüzü birden içerir', calc: eastCalc },
+    { label: '+3,70 alçak çatıların dış kenarları (KD + KB)', value: r2(csum(neBoxCalc) + csum(nwBoxCalc)), unit: 'm', note: `KD ${fmt(csum(neBoxCalc))} + KB ${fmt(csum(nwBoxCalc))}`, calc: [...named(neBoxCalc, 'KD'), ...named(nwBoxCalc, 'KB')] },
+    { label: '+7,10 → +3,70 iç kademe duvarları', value: r2(csum(intCalc)), unit: 'm', note: 'kutu çevresi − dış kenarı; terasın alçak çatıya bakan kenarı', calc: intCalc },
+    { label: 'Boşluk çevre duvarları (2 daire + avlu, dış yüz)', value: r2(csum(voidCalc)), unit: 'm', note: voids.map((v) => v.label).join(' + '), calc: voidCalc },
   ];
   items.push({
     poz: 'B.8', group: 'B', name: 'Teras çatı parapetleri – uzunluk (dış yüz)', unit: 'm', value: r2(sum(parLines.map((l) => l.value ?? 0))),
@@ -311,11 +353,11 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
 
   // ---------------------------------------------------------------- B.9 salon parapetleri
   items.push({
-    poz: 'B.9', group: 'B', name: 'Salon çatı parapetleri – uzunluk (dış yüz)', unit: 'm', value: r2(M(sum(halls.map((h) => length(h.outer, true))))),
+    poz: 'B.9', group: 'B', name: 'Salon çatı parapetleri – uzunluk (dış yüz)', unit: 'm', value: r2(sum(halls.map((h) => csum(decomposeLength(h.outer, true))))),
     method: 'Her salonun çatısını çevreleyen 0,30 m parapetin dış yüz çevresi, SITEPLAN_L / A_Elev_1 dış dikdörtgenlerinden ölçüldü. Salonlar arasında 0,80 m derz olduğundan her salonun kendi parapeti ayrı sayıldı. İç yüz çevresi notta.',
     sources: [{ drawing: ROOF, where: 'blok SITEPLAN_L · katman A_Elev_1 · salon başına dış parapet dikdörtgeni' }],
     confidence: 'Yüksek',
-    lines: halls.map((h): Line => ({ label: h.name, value: r2(M(length(h.outer, true))), unit: 'm', note: `iç yüz ${fmt(M(length(h.inner, true)))} m`, calc: mergeRows(decomposeLength(h.outer, true)) })),
+    lines: halls.map((h): Line => ({ label: h.name, value: r2(csum(decomposeLength(h.outer, true))), unit: 'm', note: `iç yüz ${fmt(M(length(h.inner, true)))} m`, calc: mergeRows(decomposeLength(h.outer, true)) })),
   });
 
   // ---------------------------------------------------------------- B.10 gizli dere
@@ -327,7 +369,13 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
     const ux = (a[1].x - a[0].x) / length(a);
     const uy = (a[1].y - a[0].y) / length(a);
     const w = Math.abs((b[0].x - a[0].x) * uy - (b[0].y - a[0].y) * ux);
-    return { h, L: (length(a) + length(b)) / 2, w };
+    const la = Math.round(length(a)) / 1000;
+    const lb = Math.round(length(b)) / 1000;
+    const calc: CalcRow[] = [
+      { kind: 'doğru', unit: 'm', label: '1. kenar', name: '1. kenar çizgisi (ortalama için ½)', adet: 0.5, boy: la, sign: 1, value: la / 2 },
+      { kind: 'doğru', unit: 'm', label: '2. kenar', name: '2. kenar çizgisi (ortalama için ½)', adet: 0.5, boy: lb, sign: 1, value: lb / 2 },
+    ];
+    return { h, L: ((la + lb) / 2) * 1000, w, calc };
   });
   const dereNote = ukNotes.find((t) => /DERE/.test(t));
   items.push({
@@ -335,7 +383,7 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
     method: `Her salon çatısında köşegen boyunca uzanan gizli dere, SITEPLAN_L / A_Elev_3 katmanında iki paralel çizgiyle çizilmiş. Uzunluk iki çizginin ortalaması (eksen) olarak alındı; genişlik iki çizgi arasındaki dik mesafedir. Elemanın kimliği, planda dereyi gösteren "${dereNote ?? 'YAĞMUR SUYU TOPLAMA KANALI/ GİZLİ DERE'}" notuyla (MULTILEADER) doğrulandı. Örtü taraması dere şeridini dışarıda bırakıyor; şerit alanı ≈ eksen × genişlik.`,
     sources: [{ drawing: ROOF, where: 'blok SITEPLAN_L · katman A_Elev_3 · 6 LWPOLYLINE (salon başına 2 paralel köşegen) + katman A_Anno_Text_1 MULTILEADER' }],
     confidence: 'Yüksek',
-    lines: gutterLines.map((x): Line => ({ label: x.h.name, value: r2(M(x.L)), unit: 'm', note: `genişlik ≈${fmt(M(x.w))} m · şerit ≈${fmt(M(x.L) * M(x.w))} m²` })),
+    lines: gutterLines.map((x): Line => ({ label: x.h.name, value: r2(M(x.L)), unit: 'm', calc: x.calc, note: `genişlik ≈${fmt(M(x.w))} m · şerit ≈${fmt(M(x.L) * M(x.w))} m²` })),
   });
 
   // ---------------------------------------------------------------- B.11 / B.12 süzgeçler
