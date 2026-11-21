@@ -9,7 +9,9 @@
     "test": "vitest run --project unit",
     "test:emu": "node scripts/emulators.mjs exec \"npx vitest run --project emu\"",
     "emulators": "node scripts/emulators.mjs start",
-    "build:functions": "node scripts/build-functions.mjs"
+    "build:functions": "node scripts/build-functions.mjs",
+    "import": "tsx scripts/import-excel.ts",
+    "seed:import": "node scripts/emulators.mjs seed \"npx tsx scripts/import-excel.ts --reset\""
   },
   "dependencies": {
     "exceljs": "^4.4.0",

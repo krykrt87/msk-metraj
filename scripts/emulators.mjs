@@ -1,5 +1,5 @@
 // Firebase emülatörlerini JDK 21 ile başlatır (sistemdeki Java 8'in önüne geçer).
-// Kullanım: node scripts/emulators.mjs start | exec "<komut>"
+// Kullanım: node scripts/emulators.mjs start | exec "<komut>" | seed "<komut>" (seed: kalıcı emulator-data ile)
 import { spawnSync, spawn } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -38,10 +38,15 @@ let args;
 if (mode === 'start') {
   args = ['emulators:start', '--project', PROJECT, '--export-on-exit', 'emulator-data'];
   if (existsSync(join(root, 'emulator-data'))) args.push('--import', 'emulator-data');
+} else if (mode === 'seed' && command) {
+  // Kalıcı veriyle çalıştırır: emulator-data içeri alınır ve sonunda geri yazılır.
+  args = ['emulators:exec', '--project', PROJECT, '--only', 'auth,firestore,storage', '--export-on-exit', 'emulator-data'];
+  if (existsSync(join(root, 'emulator-data'))) args.push('--import', 'emulator-data');
+  args.push(command);
 } else if (mode === 'exec' && command) {
   args = ['emulators:exec', '--project', PROJECT, '--only', 'auth,firestore,storage', command];
 } else {
-  console.error('Kullanım: node scripts/emulators.mjs start | exec "<komut>"');
+  console.error('Kullanım: node scripts/emulators.mjs start | exec "<komut>" | seed "<komut>"');
   process.exit(2);
 }
 const child = spawn(process.execPath, [firebaseBin, ...args], { stdio: 'inherit', env, cwd: root });
