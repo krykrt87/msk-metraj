@@ -60,6 +60,8 @@ export interface Item {
 export interface CalcRow {
   kind: 'dikdörtgen' | 'yamuk' | 'daire parçası' | 'doğru' | 'yay' | 'duvar';
   unit?: string;
+  /** Parçanın ait olduğu eleman (ör. "Güney eğrisel kenar"); parça adının yanında gösterilir. */
+  name?: string;
   label: string;
   adet: number;
   en?: number;

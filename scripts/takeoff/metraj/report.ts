@@ -1,6 +1,6 @@
 // Metraj sonucunu okunabilir Excel'e yazar: her kalemin nereden ve nasıl hesaplandığı ayrı sayfalarda.
 import ExcelJS from 'exceljs';
-import { partName, partRule, unitOf } from '../../../shared/calc';
+import { partTitle, partRule, unitOf } from '../../../shared/calc';
 import type { Takeoff } from './model';
 
 const NUM = '#,##0.00';
@@ -79,7 +79,7 @@ export async function writeReport(t: Takeoff, file: string): Promise<void> {
       r.getCell('value').numFmt = l.unit === 'adet' ? '#,##0' : NUM;
       if (l.calc?.length) r.font = { bold: true };
       for (const c of l.calc ?? []) {
-        const kind = partName(c);
+        const kind = partTitle(c);
         const rule = partRule(c);
         const cr = d.addRow({ poz: '', item: '', label: `    ${c.sign < 0 ? '(−) ' : ''}${kind}`, adet: c.adet, en: c.kind === 'daire parçası' || c.kind === 'yay' ? null : (c.en ?? null), boy: c.boy ?? null, ka: c.kind === 'yamuk' ? c.a : null, kb: c.kind === 'yamuk' ? c.b : null, r: c.r ?? null, aci: c.angle !== undefined ? Math.round(c.angle * 100) / 100 : null, value: c.value, unit: unitOf(c), note: rule });
         cr.getCell('value').numFmt = NUM;

@@ -5,6 +5,7 @@ import { readDxf } from '../lib/dxf';
 import { flatten } from '../lib/flatten';
 import { makeMeasurer } from '../lib/regions';
 import { gfItems } from './gf-items';
+import type { CalcRow } from '../lib/decompose';
 import type { Takeoff, TakeoffItem } from './model';
 import { writeReport } from './report';
 import { buildGfRooms } from './rooms-gf';
@@ -89,6 +90,21 @@ async function main() {
         /* bağımlı kalem henüz hesaplanmadı */
       }
     }
+  }
+  // "uzunluk × yükseklik" formülleri (ör. B.7 * 0,45): uzunluk kaleminin parçaları × yükseklik cetveli
+  for (const i of items) {
+    const m = /^([A-Z]\.\d+(?:\.\d+)?) \* (\d+(?:,\d+)?)$/.exec(i.formula ?? '');
+    const ref = m ? items.find((x) => x.poz === m[1]) : undefined;
+    if (!m || !ref || ref.unit !== 'm' || i.unit !== 'm²') continue;
+    const h = Number(m[2].replace(',', '.'));
+    const calc: CalcRow[] = ref.lines.flatMap((l) =>
+      (l.calc?.length ? l.calc.map((r) => ({ adet: r.adet, L: r.value / r.adet })) : l.value ? [{ adet: 1, L: l.value }] : []).map(({ adet, L }) => {
+        const boy = Math.round(L * 1000) / 1000;
+        return { kind: 'dikdörtgen' as const, label: l.label, name: l.label, adet, en: h, boy, sign: 1 as const, value: adet * h * boy };
+      }),
+    );
+    const v = Math.round(calc.reduce((s, r) => s + r.value, 0) * 100) / 100;
+    i.lines.unshift({ label: `${ref.poz} ${ref.name} × ${m[2]} m`, value: v, unit: 'm²', note: `her parça: yükseklik ${m[2]} m × ${ref.poz} satırındaki uzunluk`, calc });
   }
   for (const i of items.filter((x) => x.formula && !(x.poz in vals))) findings.push({ topic: 'Formül', drawings: '-', finding: `${i.poz} formülü hesaplanamadı: ${i.formula}`, suggestion: 'Başvurulan kalemi kontrol edin.' });
 

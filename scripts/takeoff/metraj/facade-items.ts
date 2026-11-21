@@ -7,6 +7,8 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { readDxf } from '../lib/dxf';
 import { flatten } from '../lib/flatten';
+import { readFileSync } from 'node:fs';
+import { decomposeRegion, mergeRows, type CalcRow } from '../lib/decompose';
 import type { P } from '../lib/geom';
 import type { Line, TakeoffItem } from './model';
 
@@ -16,26 +18,30 @@ const ELEVS = [
   { key: 'NW', name: 'Kuzeybatı', dwg: '4199-A-DD-01-04-300' },
   { key: 'SW', name: 'Güneybatı', dwg: '4199-A-DD-01-04-400' },
 ] as const;
-type Mat = { gross: number; net: number; src: string };
+type Mat = { gross: number; net: number; src: string; rects: [number, number][]; hatches: P[][][] | null };
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
 function elevationAreas(): Record<string, Record<string, Mat>> {
-  const cwd = join(process.cwd(), 'scripts', 'out', 'facade');
-  const res = spawnSync(process.execPath, [join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs'), 'final.ts'], { cwd, encoding: 'utf8', maxBuffer: 64e6 });
+  // ayrı süreçte (bellek): scripts/takeoff/facade/elevations.ts → work/facade-areas.json
+  const res = spawnSync(process.execPath, ['--max-old-space-size=8192', join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs'), 'scripts/takeoff/facade/elevations.ts'], { cwd: process.cwd(), encoding: 'utf8', maxBuffer: 64e6 });
   if (res.status !== 0) throw new Error(`Görünüş ölçümü çalışmadı: ${res.stderr?.slice(0, 500)}`);
-  const out: Record<string, Record<string, Mat>> = {};
-  let cur = '';
-  for (const line of res.stdout.split(/\r?\n/)) {
-    const h = /^===== (\w+) /.exec(line);
-    if (h) {
-      cur = h[1];
-      out[cur] = {};
-      continue;
-    }
-    const m = /^(.+?)\s+gross\s+([\d.]+)\s+net-visible\s+([\d.]+)\s+<-\s+(.*)$/.exec(line);
-    if (m && cur) out[cur][m[1].trim()] = { gross: +m[2], net: +m[3], src: m[4] };
+  return JSON.parse(readFileSync('work/facade-areas.json', 'utf8'));
+}
+
+/**
+ * Görünüş satırının cetveli. Taramalar birbiriyle çakışmıyor ve önde başka malzeme yoksa taramanın kendi şekli
+ * (dikdörtgen/yamuk; eğik kenarlar tam). Aksi halde ızgarada görünen hücrelerin dikdörtgenleri (5 cm adım).
+ */
+function elevCalc(m: Mat): { value: number; calc: CalcRow[]; how: string } {
+  if (m.hatches && Math.abs(m.gross - m.net) < 0.05) {
+    const calc = mergeRows(m.hatches.flatMap((l) => decomposeRegion(l)));
+    const v = calc.reduce((s, r) => s + r.value, 0);
+    if (Math.abs(v - m.gross) <= Math.max(0.3, m.gross * 0.005)) return { value: v, calc, how: 'tarama şeklinden (çakışma yok, önünde başka malzeme yok)' };
   }
-  return out;
+  const calc = mergeRows(m.rects.map(([w, h]) => ({ kind: 'dikdörtgen' as const, label: 'görünen alan', adet: 1, en: w, boy: h, sign: 1 as const, value: w * h })));
+  calc.sort((a, b) => b.value - a.value);
+  const hidden = m.gross - m.net >= 0.05 ? `; önde kalan malzemenin kapattığı ${r2(m.gross - m.net)} m² düşüldü` : '';
+  return { value: calc.reduce((s, r) => s + r.value, 0), calc, how: `görünen alan 5 cm ızgarada dikdörtgenlere ayrıldı (taramalar çakışıyor${hidden})` };
 }
 
 /** Cam cephe dikmeleri → zincirler → ardışık dikmeler arası mesafeler (gerçek cephe boyunca). */
@@ -84,16 +90,20 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
   const items: TakeoffItem[] = [];
   const findings: { topic: string; drawings: string; finding: string; suggestion: string }[] = [];
   const elevLines = (mat: string, useNet = true): Line[] =>
-    ELEVS.filter((e) => A[e.key]?.[mat]).map((e) => ({
-      label: `${e.name} görünüşü (${e.dwg})`,
-      value: r2(useNet ? A[e.key][mat].net : A[e.key][mat].gross),
-      unit: 'm²',
-      note: `tarama birleşimi; kaynak: ${A[e.key][mat].src}`,
-    }));
+    ELEVS.filter((e) => A[e.key]?.[mat]).map((e) => {
+      const c = useNet ? elevCalc(A[e.key][mat]) : null;
+      return {
+        label: `${e.name} görünüşü (${e.dwg})`,
+        value: r2(c ? c.value : A[e.key][mat].gross),
+        unit: 'm²',
+        note: `${c ? c.how : 'tarama birleşimi'}; kaynak: ${A[e.key][mat].src}`,
+        ...(c ? { calc: c.calc } : {}),
+      };
+    });
   const sum = (ls: Line[]) => r2(ls.reduce((s, l) => s + (l.value ?? 0), 0));
   const elevSources = ELEVS.map((e) => ({ drawing: e.dwg, where: 'görünüş blokları · malzeme taramaları (SOLID / DOTS / AR-SAND), malzeme etiketleri A_Anno_Text_Mat' }));
   const UNION =
-    'Görünüş paftalarındaki malzeme taramaları 50 mm ızgarada birleştirildi (üst üste binen taramalar bir kez sayıldı); doğal taş deseninin XCLIP kırpması uygulandı; malzeme, A_Anno_Text_Mat etiketinin ucunun düştüğü taramadan belirlendi. Değerler görünüşteki izdüşüm alanıdır.';
+    'Görünüş paftalarındaki malzeme taramaları 50 mm ızgarada birleştirildi (üst üste binen taramalar bir kez sayıldı); doğal taş deseninin XCLIP kırpması uygulandı; malzeme, A_Anno_Text_Mat etiketinin ucunun düştüğü taramadan belirlendi. Değerler görünüşteki izdüşüm alanıdır. Cetvel: taramalar çakışmıyorsa ve önlerinde başka malzeme yoksa taramanın kendi şekli (dikdörtgen/yamuk, eğik kenarlar tam); aksi halde görünen alan 5 cm ızgarada dikdörtgenlere ayrıldı.';
 
   // --- C.1 Cam cephe (FG-01): plandaki dikme zincirinden gerçek uzunluk
   const H = 5.35;
@@ -104,7 +114,13 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
   chains.forEach((c, i) => {
     const normal = c.bays.filter((b) => b <= 2.0);
     const wide = c.bays.filter((b) => b > 2.0);
-    const L = normal.reduce((s, b) => s + b, 0);
+    const calc = mergeRows(
+      normal.map((b) => {
+        const en = Math.round(b * 1000) / 1000;
+        return { kind: 'dikdörtgen' as const, label: 'cam bölmesi', name: 'cam bölmesi', adet: 1, en, boy: H, sign: 1 as const, value: en * H };
+      }),
+    ).sort((a, b) => b.adet - a.adet);
+    const L = calc.reduce((s, r) => s + r.value, 0) / H;
     devL += L;
     doorL += wide.reduce((s, b) => s + b, 0);
     if (L > 0)
@@ -113,7 +129,7 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
         value: r2(L * H),
         unit: 'm²',
         note: `bölme genişlikleri toplamı ${r2(L)} m × cam yüksekliği ${H} m${wide.length ? `; ${wide.length} geniş (kapı) bölme hariç: ${wide.map((b) => b.toFixed(2)).join(', ')} m` : ''}`,
-        calc: [{ kind: 'dikdörtgen', label: 'uzunluk × yükseklik', adet: 1, en: r2(L), boy: H, sign: 1, value: L * H }],
+        calc,
       });
   });
   // zincirde olmayan düzlemsel camlar: kuzeybatı arka cephe ve kuzeydoğu taş arası dar camlar (görünüşten)
@@ -121,7 +137,7 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
   glassLines.push(...extra.map((l) => ({ ...l, note: 'düzlemsel cephe; görünüş alanı = gerçek alan' })));
   const extraA = sum(extra);
   const projGlass = sum([...elevLines('FG-01 glass'), ...elevLines('FG-01? slot glazing (unlabelled)')]);
-  for (const l of elevLines('FG-01 glass').filter((x) => !x.label.startsWith('Kuzeybatı'))) glassLines.push({ ...l, label: 'Karşılaştırma (katılmadı) – ' + l.label, note: 'eğrisel güney camının bu görünüşteki izdüşümü; zincirle zaten sayıldı' });
+  for (const l of elevLines('FG-01 glass').filter((x) => !x.label.startsWith('Kuzeybatı'))) glassLines.push({ ...l, calc: undefined, label: 'Karşılaştırma (katılmadı) – ' + l.label, note: 'eğrisel güney camının bu görünüşteki izdüşümü; zincirle zaten sayıldı' });
   items.push({
     poz: 'C.1', group: 'C', code: 'FG-01', name: 'Cam giydirme cephe (gerçek açınım alanı)', unit: 'm²', value: r2(devL * H + extraA),
     method: `Zemin kat planındaki cam cephe dikmeleri (blok 4199_AMG_Glass new2 içindeki "cephe profıl" ve dinamik dikme blokları) cephe boyunca zincirlendi; ardışık dikmeler arası mesafeler toplanarak eğrisel cephenin gerçek uzunluğu bulundu. 2,0 m'den geniş bölmeler kapı bölmesi sayılıp ayrıldı. Cam yüksekliği görünüş ve kesitlerden ${H} m (+0,10 → +5,45). Dikme zincirinde olmayan düzlemsel camlar (kuzeybatı arka cephe, kuzeydoğu taş arası dar camlar) görünüş alanlarından eklendi. Güneydoğu/kuzeydoğu/güneybatı görünüşlerindeki cam, eğrisel güney camının izdüşümü olduğu için karşılaştırma satırı olarak verildi, toplama katılmadı.`,
@@ -172,7 +188,7 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
       method: `Bant yüksekliği (${h} m, görünüş kotlarından) × saçak serbest kenar uzunluğu (B.7, çatı planından, eğrisel kenar yay uzunluğuyla). Görünüşlerdeki izdüşüm alanları karşılaştırma için satırlarda.`,
       sources: [{ drawing: '4199-A-DD-01-02-300', where: 'saçak serbest kenarı (B.7)' }, ...elevSources],
       confidence: 'Orta',
-      lines: [...ls.map((l) => ({ ...l, label: `Karşılaştırma – ${l.label}` })), { label: 'Görünüş izdüşüm toplamı (miktara katılmadı)', value: sum(ls), unit: 'm²' }],
+      lines: [...ls.map((l) => ({ ...l, calc: undefined, label: `Karşılaştırma – ${l.label}` })), { label: 'Görünüş izdüşüm toplamı (miktara katılmadı)', value: sum(ls), unit: 'm²' }],
       notes: ['Sistem detayında (00-09-100) saçak alnı tek parça FP-03 alüminyum levha (yüz 2,11 m) olarak çizilmiş; görünüşte bantlara ayrılmış ve FM kodlarıyla etiketlenmiş.'],
     });
   }

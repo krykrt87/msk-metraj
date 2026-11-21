@@ -37,4 +37,7 @@ export function partRule(r: CalcRow): string {
   }
 }
 
+/** Parça adı + ait olduğu eleman. */
+export const partTitle = (r: CalcRow) => (r.name ? `${partName(r)} – ${r.name}` : partName(r));
+
 export const unitOf = (r: CalcRow) => r.unit ?? 'm²';

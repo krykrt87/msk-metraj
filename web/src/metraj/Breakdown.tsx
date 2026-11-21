@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import { formatTr } from '@shared/number';
-import { partName, partRule, unitOf } from '@shared/calc';
+import { partName, partRule, partTitle, unitOf } from '@shared/calc';
 import type { CalcRow, Item } from '@shared/types';
 
 export { partName };
@@ -73,7 +73,7 @@ export function Breakdown({ item }: { item: Item }) {
                     <tr key={k} className={`part${r.sign < 0 ? ' minus' : ''}`}>
                       <td className="part-name">
                         {r.sign < 0 ? '(−) ' : ''}
-                        {partName(r)}
+                        {partTitle(r)}
                       </td>
                       <td className="num">{r.adet}</td>
                       {cols.map((c) => (
