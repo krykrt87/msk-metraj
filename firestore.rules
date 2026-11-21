@@ -1,7 +1,67 @@
 rules_version = '2';
-// Geçici: her şey kapalı. Gerçek kurallar Task 6'da.
+// Yetkiler kullanıcı dokümanından okunur (users/{uid}); değişiklik anında geçerli olur.
+// Metraj verisine (kalem, mahal, cephe, malzeme, geçmiş) doğrudan yazma yoktur: tüm yazmalar Cloud Functions üzerinden.
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} { allow read, write: if false; }
+    function userPath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function profile() { return get(userPath()).data; }
+    function active() { return request.auth != null && exists(userPath()) && profile().active == true; }
+    function role() { return profile().role; }
+    function access(p, d) { return profile().access.get(p, {}).get(d, {}); }
+    function canView(p, d) { return active() && access(p, d).get('view', false) == true; }
+    function canDrawings(p, d) { return canView(p, d) && access(p, d).get('drawings', false) == true; }
+    function canEdit(p, d) { return canView(p, d) && role() in ['admin', 'kontrolcu']; }
+
+    function validComment() {
+      let c = request.resource.data;
+      return c.keys().hasOnly(['target', 'text', 'by', 'at']) && c.keys().hasAll(['target', 'text', 'by', 'at'])
+        && c.text is string && c.text.size() > 0 && c.text.size() <= 2000
+        && c.by.keys().hasOnly(['uid', 'name']) && c.by.uid == request.auth.uid && c.by.name == profile().name
+        && c.at == request.time
+        && c.target.type in ['item', 'room', 'facade', 'material', 'finding', 'drawing']
+        && c.target.id is string && c.target.id.size() > 0;
+    }
+    function validFinding(f) {
+      return f.keys().hasOnly(['no', 'topic', 'drawingsText', 'finding', 'suggestion', 'status'])
+        && f.no is int && f.topic is string && f.drawingsText is string
+        && f.finding is string && f.suggestion is string
+        && f.status in ['acik', 'iletildi', 'cozuldu'];
+    }
+
+    match /users/{uid} {
+      allow read: if active() && (request.auth.uid == uid || role() == 'admin');
+      allow write: if false;
+    }
+
+    match /projects/{p} {
+      allow read: if active();
+      allow write: if false;
+
+      match /disciplines/{d} {
+        allow read: if canView(p, d);
+        allow write: if false;
+
+        match /{coll}/{id} {
+          allow read: if canView(p, d) && coll in ['items', 'rooms', 'facade', 'materials', 'history'];
+          allow write: if false;
+        }
+        match /drawings/{rest=**} {
+          allow read: if canDrawings(p, d);
+          allow write: if false;
+        }
+        match /comments/{id} {
+          allow read: if canView(p, d);
+          allow create: if canView(p, d) && validComment();
+          allow update, delete: if false;
+        }
+        match /findings/{id} {
+          allow read: if canView(p, d);
+          allow create: if canEdit(p, d) && validFinding(request.resource.data) && string(request.resource.data.no) == id;
+          allow update: if canEdit(p, d) && validFinding(request.resource.data)
+            && request.resource.data.no == resource.data.no;
+          allow delete: if false;
+        }
+      }
+    }
   }
 }

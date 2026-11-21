@@ -11,7 +11,8 @@
     "emulators": "node scripts/emulators.mjs start",
     "build:functions": "node scripts/build-functions.mjs",
     "import": "tsx scripts/import-excel.ts",
-    "seed:import": "node scripts/emulators.mjs seed \"npx tsx scripts/import-excel.ts --reset\""
+    "seed:import": "node scripts/emulators.mjs seed \"npx tsx scripts/import-excel.ts --reset\"",
+    "admin": "tsx scripts/bootstrap-admin.ts"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
