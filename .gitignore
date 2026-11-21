@@ -26,3 +26,6 @@ firestore-debug.log*
 ui-debug.log*
 .superpowers/
 .claude/settings.local.json
+
+# Metraj çalışma dosyaları (DWG kopyaları, DXF)
+work/
