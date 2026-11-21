@@ -1,56 +1,27 @@
-import { Fragment, useState } from 'react';
+import { Fragment } from 'react';
 import { formatTr } from '@shared/number';
 import type { CalcRow, Item } from '@shared/types';
 
-const f3 = (v: number | undefined) =>
-  v === undefined ? '' : new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 3 }).format(v);
+const n3 = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+const f3 = (v: number | undefined) => (v === undefined || v === null ? '' : n3.format(v));
 
-/** Cetvel: her parça için adet × en × boy = miktar (yamukta (a + b) / 2, daire parçasında r ve açı). */
-function CalcTable({ rows }: { rows: CalcRow[] }) {
-  return (
-    <table className="calc-table">
-      <thead>
-        <tr>
-          <th>Parça</th>
-          <th className="num">Adet</th>
-          <th className="num">En (m)</th>
-          <th className="num">Boy (m)</th>
-          <th className="num">Miktar</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r, i) => (
-          <tr key={i} className={r.sign < 0 ? 'minus' : undefined}>
-            <td>
-              {r.sign < 0 ? '(−) ' : ''}
-              {r.kind === 'dikdörtgen' ? 'Dikdörtgen' : r.kind === 'yamuk' ? `Yamuk (${f3(r.a)} + ${f3(r.b)}) / 2` : `Daire parçası r = ${f3(r.r)} m, açı ${f3(r.angle)}°`}
-            </td>
-            <td className="num">{r.adet}</td>
-            <td className="num">{f3(r.en)}</td>
-            <td className="num">{f3(r.boy)}</td>
-            <td className="num">{formatTr(r.value)}</td>
-          </tr>
-        ))}
-        <tr className="total">
-          <td colSpan={4}>Toplam</td>
-          <td className="num">{formatTr(rows.reduce((s, r) => s + r.value, 0))}</td>
-        </tr>
-      </tbody>
-    </table>
-  );
+export function partName(r: CalcRow): string {
+  if (r.kind === 'dikdörtgen') return 'Dikdörtgen';
+  if (r.kind === 'yamuk') return r.a === 0 || r.b === 0 ? 'Üçgen' : 'Yamuk';
+  return 'Daire parçası';
 }
+const partRule = (r: CalcRow) =>
+  r.kind === 'dikdörtgen' ? 'en × boy' : r.kind === 'yamuk' ? (r.a === 0 || r.b === 0 ? 'taban × yükseklik / 2' : '(a + b) / 2 × boy') : 'r²/2 × (θ − sin θ)';
 
-/** Miktarın nereden ve nasıl hesaplandığı: kaynaklar, satır satır döküm (açılır cetvel), notlar. */
+/** Excel cetveli gibi: her değer kendi sütununda; parça satırları her satırın altında. */
 export function Breakdown({ item }: { item: Item }) {
   const lines = item.breakdown ?? [];
-  const [open, setOpen] = useState<Set<number>>(() => new Set(lines.length === 1 && lines[0].calc ? [0] : []));
-  const toggle = (i: number) =>
-    setOpen((s) => {
-      const n = new Set(s);
-      if (n.has(i)) n.delete(i);
-      else n.add(i);
-      return n;
-    });
+  const parts = lines.flatMap((l) => l.calc ?? []);
+  const hasParts = parts.length > 0;
+  const hasTrap = parts.some((r) => r.kind === 'yamuk');
+  const hasArc = parts.some((r) => r.kind === 'daire parçası');
+  const cols = 4 + (hasParts ? 3 : 0) + (hasTrap ? 2 : 0) + (hasArc ? 2 : 0);
+
   return (
     <div className="breakdown">
       {item.sources && item.sources.length > 0 && (
@@ -66,53 +37,71 @@ export function Breakdown({ item }: { item: Item }) {
         </div>
       )}
       {lines.length > 0 ? (
-        <table className="data bd-table">
-          <thead>
-            <tr>
-              <th>Satır</th>
-              <th className="num">Değer</th>
-              <th>Açıklama</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lines.map((l, i) => (
-              <Fragment key={i}>
-                <tr className={l.calc ? 'expandable' : undefined} onClick={l.calc ? () => toggle(i) : undefined}>
-                  <td>
-                    {l.calc && (
-                      <span className="caret" aria-hidden="true">
-                        {open.has(i) ? '▾ ' : '▸ '}
-                      </span>
-                    )}
-                    {l.label}
-                  </td>
-                  <td className="num">
-                    {formatTr(l.value, l.unit)} {l.unit}
-                  </td>
-                  <td className="bd-note">{l.note ?? ''}</td>
-                </tr>
-                {l.calc && open.has(i) && (
-                  <tr className="calc-row">
-                    <td colSpan={3}>
-                      <CalcTable rows={l.calc} />
-                    </td>
+        <div className="cetvel-wrap">
+          <table className="cetvel">
+            <thead>
+              <tr>
+                <th>Açıklama</th>
+                {hasParts && <th className="num">Adet</th>}
+                {hasParts && <th className="num">En (m)</th>}
+                {hasParts && <th className="num">Boy (m)</th>}
+                {hasTrap && <th className="num">Kenar a (m)</th>}
+                {hasTrap && <th className="num">Kenar b (m)</th>}
+                {hasArc && <th className="num">r (m)</th>}
+                {hasArc && <th className="num">Açı (°)</th>}
+                <th className="num">Miktar</th>
+                <th>Birim</th>
+                <th>Hesap / not</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l, i) => (
+                <Fragment key={i}>
+                  <tr className={l.calc?.length ? 'line has-parts' : 'line'}>
+                    <td>{l.label}</td>
+                    {hasParts && <td />}
+                    {hasParts && <td />}
+                    {hasParts && <td />}
+                    {hasTrap && <td />}
+                    {hasTrap && <td />}
+                    {hasArc && <td />}
+                    {hasArc && <td />}
+                    <td className="num">{formatTr(l.value, l.unit)}</td>
+                    <td>{l.unit}</td>
+                    <td className="note">{l.note ?? ''}</td>
                   </tr>
-                )}
-              </Fragment>
-            ))}
-            <tr className="total">
-              <td>Toplam</td>
-              <td className="num">
-                {formatTr(item.value, item.unit)} {item.unit}
-              </td>
-              <td />
-            </tr>
-          </tbody>
-        </table>
+                  {(l.calc ?? []).map((r, k) => (
+                    <tr key={k} className={`part${r.sign < 0 ? ' minus' : ''}`}>
+                      <td className="part-name">
+                        {r.sign < 0 ? '(−) ' : ''}
+                        {partName(r)}
+                      </td>
+                      <td className="num">{r.adet}</td>
+                      <td className="num">{r.kind === 'daire parçası' ? '' : f3(r.en)}</td>
+                      <td className="num">{f3(r.boy)}</td>
+                      {hasTrap && <td className="num">{r.kind === 'yamuk' ? f3(r.a) : ''}</td>}
+                      {hasTrap && <td className="num">{r.kind === 'yamuk' ? f3(r.b) : ''}</td>}
+                      {hasArc && <td className="num">{f3(r.r)}</td>}
+                      {hasArc && <td className="num">{f3(r.angle)}</td>}
+                      <td className="num">{formatTr(r.value)}</td>
+                      <td>m²</td>
+                      <td className="note">{partRule(r)}</td>
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
+              <tr className="total">
+                <td colSpan={cols - 3}>Toplam</td>
+                <td className="num">{formatTr(item.value, item.unit)}</td>
+                <td>{item.unit}</td>
+                <td />
+              </tr>
+            </tbody>
+          </table>
+        </div>
       ) : (
         <p className="hint">{item.formula ? `Bu kalem formülle hesaplanır: ${item.formula}` : 'Satır dökümü yok.'}</p>
       )}
-      {lines.some((l) => l.calc) && <p className="hint">Satırın yanındaki ▸ işaretine tıklayınca adet × en × boy dökümü açılır.</p>}
       {item.notes && item.notes.length > 0 && (
         <div className="bd-notes">
           <h3>Notlar</h3>

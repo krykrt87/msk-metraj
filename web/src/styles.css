@@ -811,3 +811,62 @@ label.check {
   margin: 0 0 8px;
   font-size: var(--fs-1);
 }
+
+/* Cetvel: Excel benzeri sütunlar */
+.cetvel-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+}
+.cetvel {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--font-data);
+  font-size: var(--fs-1);
+}
+.cetvel th,
+.cetvel td {
+  border: 1px solid var(--rule);
+  padding: 3px 6px;
+  vertical-align: top;
+}
+.cetvel th {
+  background: #eff2f4;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+  position: sticky;
+  top: 0;
+  white-space: nowrap;
+}
+.cetvel .num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cetvel tr.line td {
+  font-weight: 600;
+  background: var(--panel);
+}
+.cetvel tr.line.has-parts td {
+  background: #f6f8f9;
+}
+.cetvel tr.part td {
+  color: var(--ink-2);
+  font-weight: 400;
+}
+.cetvel tr.part .part-name {
+  padding-left: 18px;
+}
+.cetvel tr.part.minus td {
+  color: var(--redline);
+}
+.cetvel td.note {
+  color: var(--ink-2);
+  font-weight: 400;
+  min-width: 140px;
+}
+.cetvel tr.total td {
+  font-weight: 700;
+  border-top: 2px solid var(--ink);
+  background: #eff2f4;
+}

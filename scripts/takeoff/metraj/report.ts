@@ -63,6 +63,10 @@ export async function writeReport(t: Takeoff, file: string): Promise<void> {
     { header: 'Adet', key: 'adet', width: 6 },
     { header: 'En (m)', key: 'en', width: 10 },
     { header: 'Boy (m)', key: 'boy', width: 10 },
+    { header: 'Kenar a (m)', key: 'ka', width: 10 },
+    { header: 'Kenar b (m)', key: 'kb', width: 10 },
+    { header: 'r (m)', key: 'r', width: 9 },
+    { header: 'Açı (°)', key: 'aci', width: 8 },
     { header: 'Değer', key: 'value', width: 13 },
     { header: 'Birim', key: 'unit', width: 7 },
     { header: 'Açıklama', key: 'note', width: 70 },
@@ -74,11 +78,13 @@ export async function writeReport(t: Takeoff, file: string): Promise<void> {
       r.getCell('value').numFmt = l.unit === 'adet' ? '#,##0' : NUM;
       if (l.calc?.length) r.font = { bold: true };
       for (const c of l.calc ?? []) {
-        const kind = c.kind === 'dikdörtgen' ? 'dikdörtgen' : c.kind === 'yamuk' ? `yamuk (${c.a} + ${c.b}) / 2` : `daire parçası r=${c.r} m, açı ${c.angle?.toFixed(2)}°`;
-        const cr = d.addRow({ poz: '', item: '', label: `    ${c.sign < 0 ? '(−) ' : ''}${kind}`, adet: c.adet, en: c.en ?? null, boy: c.boy ?? null, value: c.value, unit: 'm²', note: c.kind === 'daire parçası' ? 'r²/2 × (θ − sin θ)' : c.kind === 'yamuk' ? 'ortalama en × boy' : 'en × boy' });
+        const kind = c.kind === 'dikdörtgen' ? 'Dikdörtgen' : c.kind === 'yamuk' ? (c.a === 0 || c.b === 0 ? 'Üçgen' : 'Yamuk') : 'Daire parçası';
+        const rule = c.kind === 'dikdörtgen' ? 'en × boy' : c.kind === 'yamuk' ? (c.a === 0 || c.b === 0 ? 'taban × yükseklik / 2' : '(a + b) / 2 × boy') : 'r²/2 × (θ − sin θ)';
+        const cr = d.addRow({ poz: '', item: '', label: `    ${c.sign < 0 ? '(−) ' : ''}${kind}`, adet: c.adet, en: c.kind === 'daire parçası' ? null : (c.en ?? null), boy: c.boy ?? null, ka: c.kind === 'yamuk' ? c.a : null, kb: c.kind === 'yamuk' ? c.b : null, r: c.r ?? null, aci: c.angle !== undefined ? Math.round(c.angle * 100) / 100 : null, value: c.value, unit: 'm²', note: rule });
         cr.getCell('value').numFmt = NUM;
         cr.getCell('en').numFmt = '0.000';
         cr.getCell('boy').numFmt = '0.000';
+        for (const k of ['ka', 'kb', 'r']) cr.getCell(k).numFmt = '0.000';
         cr.font = { color: { argb: c.sign < 0 ? 'FFB42318' : 'FF5A6270' } };
       }
     }
