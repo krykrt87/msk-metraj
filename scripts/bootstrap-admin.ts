@@ -32,8 +32,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const email = argValue(argv, '--email');
   const name = argValue(argv, '--name');
   const password = argValue(argv, '--password');
-  if (!email || !name || !password || password.length < 8) {
-    console.error('Kullanım: --email <e-posta> --name "<ad soyad>" --password <en az 8 karakter>');
+  if (!email || !name || !password || password.length < 6) {
+    console.error('Kullanım: --email <e-posta> --name "<ad soyad>" --password <en az 6 karakter>');
     process.exit(2);
   }
   const { auth, db } = initAdmin(argv);
