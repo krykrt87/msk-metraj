@@ -45,11 +45,27 @@ export interface Item {
   updatedAt: TimeValue;
   updatedBy: Actor | null;
   /** Hesap detayı: miktarın satır satır dökümü (DWG ölçümünden). */
-  breakdown?: { label: string; value: number | null; unit: string; note?: string }[];
+  breakdown?: { label: string; value: number | null; unit: string; note?: string; calc?: CalcRow[] }[];
   /** Kaynak pafta ve çizim nesnesi (blok / katman). */
   sources?: { drawing: string; where: string }[];
   /** Varsayım, belirsizlik, proje hatası notları. */
   notes?: string[];
+}
+
+/** Metraj cetveli satırı: adet × en × boy (yamukta ortalama en; daire parçasında r ve açı). */
+export interface CalcRow {
+  kind: 'dikdörtgen' | 'yamuk' | 'daire parçası';
+  label: string;
+  adet: number;
+  en?: number;
+  boy?: number;
+  yukseklik?: number;
+  a?: number;
+  b?: number;
+  r?: number;
+  angle?: number;
+  sign: 1 | -1;
+  value: number;
 }
 
 export interface Room {

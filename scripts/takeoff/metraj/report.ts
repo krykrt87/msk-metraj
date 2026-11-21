@@ -59,7 +59,10 @@ export async function writeReport(t: Takeoff, file: string): Promise<void> {
   head(d, [
     { header: 'Poz', key: 'poz', width: 8 },
     { header: 'Kalem', key: 'item', width: 36 },
-    { header: 'Satır', key: 'label', width: 44 },
+    { header: 'Satır / parça', key: 'label', width: 44 },
+    { header: 'Adet', key: 'adet', width: 6 },
+    { header: 'En (m)', key: 'en', width: 10 },
+    { header: 'Boy (m)', key: 'boy', width: 10 },
     { header: 'Değer', key: 'value', width: 13 },
     { header: 'Birim', key: 'unit', width: 7 },
     { header: 'Açıklama', key: 'note', width: 70 },
@@ -69,6 +72,15 @@ export async function writeReport(t: Takeoff, file: string): Promise<void> {
     for (const l of i.lines) {
       const r = d.addRow({ poz: i.poz, item: i.name, label: l.label, value: l.value, unit: l.unit, note: l.note ?? '' });
       r.getCell('value').numFmt = l.unit === 'adet' ? '#,##0' : NUM;
+      if (l.calc?.length) r.font = { bold: true };
+      for (const c of l.calc ?? []) {
+        const kind = c.kind === 'dikdörtgen' ? 'dikdörtgen' : c.kind === 'yamuk' ? `yamuk (${c.a} + ${c.b}) / 2` : `daire parçası r=${c.r} m, açı ${c.angle?.toFixed(2)}°`;
+        const cr = d.addRow({ poz: '', item: '', label: `    ${c.sign < 0 ? '(−) ' : ''}${kind}`, adet: c.adet, en: c.en ?? null, boy: c.boy ?? null, value: c.value, unit: 'm²', note: c.kind === 'daire parçası' ? 'r²/2 × (θ − sin θ)' : c.kind === 'yamuk' ? 'ortalama en × boy' : 'en × boy' });
+        cr.getCell('value').numFmt = NUM;
+        cr.getCell('en').numFmt = '0.000';
+        cr.getCell('boy').numFmt = '0.000';
+        cr.font = { color: { argb: c.sign < 0 ? 'FFB42318' : 'FF5A6270' } };
+      }
     }
     const s = d.addRow({ poz: i.poz, item: i.name, label: 'TOPLAM', value: i.value, unit: i.unit });
     s.font = { bold: true };

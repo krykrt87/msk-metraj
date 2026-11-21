@@ -7,6 +7,7 @@ import { area, bbox, pointInPolygon, type P } from './lib/geom';
 export interface RoomPoly {
   id: number;
   pts: P[];
+  verts?: { x: number; y: number; bulge: number }[];
   area: number; // m²
   block: string;
   kind: string;
@@ -28,7 +29,7 @@ export function extractRooms(flat: Flat[], blockFilter?: RegExp) {
   const polys: RoomPoly[] = [];
   flat.forEach((f) => {
     if (f.layer !== 'A_Nplt_Area' || !f.closed || !f.pts || !inBlock(f)) return;
-    polys.push({ id: polys.length + 1, pts: f.pts, area: area(f.pts) / 1e6, block: f.path[0] ?? '(model)', kind: f.t });
+    polys.push({ id: polys.length + 1, pts: f.pts, verts: f.verts, area: area(f.pts) / 1e6, block: f.path[0] ?? '(model)', kind: f.t });
   });
   const byInst = new Map<number, Flat[]>();
   for (const f of flat) if (f.layer === 'A_Anno_Rmname' && f.t === 'TEXT' && f.inst && inBlock(f)) byInst.set(f.inst, [...(byInst.get(f.inst) ?? []), f]);

@@ -18,6 +18,7 @@ export interface Flat {
   at?: P; // INSERT/TEXT konumu
   attrs?: Record<string, string>;
   scaleDet?: number; // alan çarpanı (blok ölçeği)
+  verts?: { x: number; y: number; bulge: number }[]; // PLINE özgün köşeleri (dünya, bulge ayna dönüşümünde işaret değiştirir)
   inst?: number; // içinde bulunduğu en içteki blok eklemesinin kimliği (INSERT için kendi kimliği)
 }
 
@@ -136,7 +137,9 @@ export function flatten(dxf: RawDxf, opts: { maxDepth?: number } = {}): Flat[] {
       case 'LWPOLYLINE': {
         const closed = (num(e, 70) & 1) === 1;
         const mm = mul(m, ocs(e));
-        out.push({ ...base, t: 'PLINE', closed, pts: expandBulges(lwVertices(e), closed).map((q) => apply(mm, q)) });
+        const lv = lwVertices(e);
+        const flip = det(mm) < 0 ? -1 : 1;
+        out.push({ ...base, t: 'PLINE', closed, pts: expandBulges(lv, closed).map((q) => apply(mm, q)), verts: lv.map((q) => ({ ...apply(mm, q), bulge: (q.bulge ?? 0) * flip })) });
         return;
       }
       case 'POLYLINE': {
@@ -145,7 +148,8 @@ export function flatten(dxf: RawDxf, opts: { maxDepth?: number } = {}): Flat[] {
         const closed = (flags & 1) === 1;
         const verts = e.children.filter((c) => c.type === 'VERTEX').map((v) => ({ x: num(v, 10), y: num(v, 20), bulge: num(v, 42) }));
         const mm = mul(m, ocs(e));
-        out.push({ ...base, t: 'PLINE', closed, pts: expandBulges(verts, closed).map((q) => apply(mm, q)) });
+        const flip = det(mm) < 0 ? -1 : 1;
+        out.push({ ...base, t: 'PLINE', closed, pts: expandBulges(verts, closed).map((q) => apply(mm, q)), verts: verts.map((q) => ({ ...apply(mm, q), bulge: (q.bulge ?? 0) * flip })) });
         return;
       }
       case 'ARC': {

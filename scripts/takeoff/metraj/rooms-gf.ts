@@ -3,19 +3,21 @@
 // → etiket ölçümle %25'ten fazla çelişiyorsa doldurma ölçümü.
 import type { Flat } from '../lib/flatten';
 import { area, bbox, pointInPolygon, type P } from '../lib/geom';
+import { decomposeArea } from '../lib/decompose';
 import { extractRooms } from '../rooms';
 import type { RoomRow } from './model';
 
 export interface GfRooms {
   rows: RoomRow[];
-  plate: { pts: P[]; area: number } | null; // kat genel sınırı (brüt)
+  plate: { pts: P[]; verts?: { x: number; y: number; bulge: number }[]; area: number } | null; // kat genel sınırı (brüt)
   notes: string[];
 }
 
-export function buildGfRooms(flat: Flat[], measureAt: (seed: P, half?: number, res?: number) => { area: number; leaked: boolean }): GfRooms {
+export function buildGfRooms(flat: Flat[], measureAt: (seed: P, half?: number, res?: number) => { area: number; leaked: boolean; outline: P[] }): GfRooms {
   const notes: string[] = [];
   const { polys, labels, match } = extractRooms(flat, /^4199_AMH-Alanlar2?$/);
   const plateP = polys.find((p) => p.area > 5000) ?? null;
+  if (plateP) plateP.area = decomposeArea(plateP.verts ?? plateP.pts.map((q) => ({ ...q, bulge: 0 }))).reduce((t, x) => t + x.value, 0);
   // zone çerçeveleri (A_Anno_Lay.Vprt) ve adları (A_Anno_Text_1 "ZONE n")
   const frames = flat.filter((f) => f.layer === 'A_Anno_Lay.Vprt' && f.closed && f.pts && area(f.pts) > 1e9 && area(f.pts) < 2e10);
   const zoneTexts = flat.filter((f) => f.t === 'TEXT' && /^ZONE \d$/.test(f.text ?? ''));
@@ -44,7 +46,10 @@ export function buildGfRooms(flat: Flat[], measureAt: (seed: P, half?: number, r
     let src: RoomRow['areaSource'];
     let measured: number | null = null;
     let note: string | null = null;
+    let calc: RoomRow['calc'];
     if (own) {
+      calc = decomposeArea(own.verts ?? own.pts.map((q) => ({ ...q, bulge: 0 })));
+      own.area = calc.reduce((t, x) => t + x.value, 0); // yaylar tam formülle (örneklemeden hassas)
       used.add(own.id);
       areaV = own.area;
       src = 'sınır';
@@ -52,9 +57,11 @@ export function buildGfRooms(flat: Flat[], measureAt: (seed: P, half?: number, r
     } else {
       const m = measureAt(l.at, 35000, 15);
       measured = m.leaked ? null : m.area;
+      const measuredCalc = m.outline.length ? decomposeArea(m.outline.map((q) => ({ ...q, bulge: 0 }))) : undefined;
       if (l.labelArea !== null && measured !== null && Math.abs(measured - l.labelArea) / measured > 0.25) {
         areaV = measured;
         src = 'ölçüm';
+        calc = measuredCalc;
         note = `Mahal sınırı çizilmemiş. Etiketteki ${l.labelArea.toFixed(2)} m² ölçümle çelişiyor (kopyalama hatası); duvar iç yüzlerinden ölçülen ${measured.toFixed(2)} m² alındı.`;
         notes.push(`${code} ${l.name}: ${note}`);
       } else if (l.labelArea !== null) {
@@ -69,7 +76,7 @@ export function buildGfRooms(flat: Flat[], measureAt: (seed: P, half?: number, r
     }
     rows.push({
       id, code, name: l.name, floor, zone: zoneOf(l.at), area: areaV, areaSource: src, labelArea: l.labelArea, measuredArea: measured,
-      ceilingLower: null, ceilingUpper: null, ch: null, flooring: null, note,
+      ceilingLower: null, ceilingUpper: null, ch: null, flooring: null, note, calc,
     });
   }
   // etiketsiz mahal sınırları (kolon kesitleri ve kat genel sınırı hariç)
@@ -81,9 +88,10 @@ export function buildGfRooms(flat: Flat[], measureAt: (seed: P, half?: number, r
     rows.push({
       id, code: id, name: 'Etiketsiz mahal', floor: p.block.endsWith('2') ? 'Asma Kat (Teknik)' : 'Zemin Kat', zone: zoneOf(c), area: p.area,
       areaSource: 'sınır', labelArea: null, measuredArea: null, ceilingLower: null, ceilingUpper: null, ch: null, flooring: null,
+      calc: decomposeArea(p.verts ?? p.pts.map((q) => ({ ...q, bulge: 0 }))),
       note: 'Mahal sınırı çizili ama kod/ad etiketi yok.',
     });
     notes.push(`Etiketsiz mahal sınırı #${p.id}: ${p.area.toFixed(2)} m² (${zoneOf(c) || 'zone ?'}).`);
   }
-  return { rows, plate: plateP ? { pts: plateP.pts, area: plateP.area } : null, notes };
+  return { rows, plate: plateP ? { pts: plateP.pts, verts: plateP.verts, area: plateP.area } : null, notes };
 }

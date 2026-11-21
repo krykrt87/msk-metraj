@@ -1,9 +1,11 @@
+import type { CalcRow } from '../lib/decompose';
 // Metraj çıktısının veri modeli: her kalem, nereden ve nasıl hesaplandığını satır satır taşır.
 export interface Line {
   label: string; // ör. "GF-03 SALON 01"
   value: number | null;
   unit: string;
   note?: string; // ör. "sınır çizgisi #23, etiket 1198.08"
+  calc?: CalcRow[]; // cetvel: adet × en × boy (× yükseklik) satırları
 }
 export interface Source {
   drawing: string; // pafta kodu, ör. 4199-A-DD-01-02-100
@@ -39,6 +41,7 @@ export interface RoomRow {
   ch: string | null;
   flooring: string | null;
   note: string | null;
+  calc?: CalcRow[];
 }
 export interface Takeoff {
   generatedAt: string;

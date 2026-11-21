@@ -3,12 +3,13 @@ import { extractDoors } from '../doors';
 import type { RawDxf } from '../lib/dxf';
 import type { Flat } from '../lib/flatten';
 import { area, bbox, length, pointInPolygon, regionArea, type P } from '../lib/geom';
+import { decomposeArea } from '../lib/decompose';
 import type { RoomRow, TakeoffItem } from './model';
 
 const GF = '4199-A-DD-01-02-100';
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
-export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pts: P[]; area: number }): TakeoffItem[] {
+export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pts: P[]; verts?: { x: number; y: number; bulge: number }[]; area: number }): TakeoffItem[] {
   const items: TakeoffItem[] = [];
   const top = (f: Flat) => f.path[0] ?? '';
   const gfRooms = rooms.filter((r) => r.floor === 'Zemin Kat');
@@ -18,6 +19,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     value: r2(r.area),
     unit: 'm²',
     note: r.areaSource === 'sınır' ? 'mahal sınır çizgisinden (A_Nplt_Area)' : r.areaSource === 'etiket' ? 'mahal sınırı yok; etiket alanı (kontrol ölçümüyle doğrulandı)' : 'duvar iç yüzlerinden ölçüm',
+    calc: r.calc,
   });
 
   items.push({
@@ -45,7 +47,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     sources: [{ drawing: GF, where: 'blok 4199_AMH-Alanlar · katman A_Nplt_Area · kat genel sınırı (en büyük kapalı çizgi)' }],
     confidence: 'Yüksek',
     lines: [
-      { label: 'Kat genel sınırı alanı', value: r2(plate.area), unit: 'm²' },
+      { label: 'Kat genel sınırı alanı', value: r2(plate.area), unit: 'm²', calc: decomposeArea(plate.verts ?? plate.pts.map((q) => ({ ...q, bulge: 0 }))) },
       { label: 'Plandaki not', value: 6886.9, unit: 'm²', note: 'Zemin Kat Toplam (A_Anno_Text_1)' },
     ],
   });

@@ -36,7 +36,7 @@ export function takeoffToImport(t: Takeoff): ImportData {
       sourceFormula: null,
       updatedAt: null,
       updatedBy: null,
-      breakdown: i.lines.map((l) => ({ label: l.label, value: l.value, unit: l.unit, ...(l.note ? { note: l.note } : {}) })),
+      breakdown: i.lines.map((l) => ({ label: l.label, value: l.value, unit: l.unit, ...(l.note ? { note: l.note } : {}), ...(l.calc?.length ? { calc: l.calc } : {}) })),
       sources: i.sources,
       notes: i.notes ?? [],
     };
