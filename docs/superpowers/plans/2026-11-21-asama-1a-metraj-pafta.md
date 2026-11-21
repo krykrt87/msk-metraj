@@ -23,11 +23,11 @@
 - 3D model miktar kaynağı değildir; bu planda yalnız devre dışı "3D" sekmesi var.
 
 ## İnceleme Odağı
-1. **Eşzamanlı düzeltme:** iki kullanıcı aynı anda B.1 ve A.5'i düzeltir → sonunda B.2 = A.5 − B.1 olmalı (Görev 7 testi).
-2. **Oturum açıkken yetki geri alma:** Yönetici pafta yetkisini kaldırınca kullanıcının bir sonraki pafta okuması hemen reddedilmeli (kurallar kullanıcı dokümanını okur, eski token kullanılmaz) (Görev 6 testi).
-3. **Fonksiyon hatası / bağlantı kopması:** düzeltme gönderimi başarısız olursa form girilen değeri ve gerekçeyi kaybetmemeli, Türkçe hata göstermeli (Görev 11 testi).
-4. **Beklenmeyen Excel:** sayfa adı değişmiş, desteklenmeyen formül, bilinmeyen satır başvurusu varsa aktarım hücre adresiyle hata verip **hiçbir şey yazmamalı** (Görev 5 testi).
-5. **Hızlı yakınlaştırma/kaydırma:** geç biten pafta detay görüntüsü yanlış yerde gösterilmemeli; görüntü, çizildiği dikdörtgene yerleşmeli ve eski istekler iptal edilmeli (Görev 14 testi).
+1. **Eşzamanlı düzeltme:** iki kullanıcı aynı anda B.1 ve A.5'i düzeltir → sonunda B.2 = A.5 − B.1 olmalı (Task 7 testi).
+2. **Oturum açıkken yetki geri alma:** Yönetici pafta yetkisini kaldırınca kullanıcının bir sonraki pafta okuması hemen reddedilmeli (kurallar kullanıcı dokümanını okur, eski token kullanılmaz) (Task 6 testi).
+3. **Fonksiyon hatası / bağlantı kopması:** düzeltme gönderimi başarısız olursa form girilen değeri ve gerekçeyi kaybetmemeli, Türkçe hata göstermeli (Task 11 testi).
+4. **Beklenmeyen Excel:** sayfa adı değişmiş, desteklenmeyen formül, bilinmeyen satır başvurusu varsa aktarım hücre adresiyle hata verip **hiçbir şey yazmamalı** (Task 5 testi).
+5. **Hızlı yakınlaştırma/kaydırma:** geç biten pafta detay görüntüsü yanlış yerde gösterilmemeli; görüntü, çizildiği dikdörtgene yerleşmeli ve eski istekler iptal edilmeli (Task 14 testi).
 
 ---
 
@@ -68,7 +68,7 @@ Storage: projects/{p}/disciplines/{d}/drawings/{code}/{revId}.pdf
 
 ---
 
-### Görev 1: Ortam ve iskelet
+### Task 1: Ortam ve iskelet
 **Dosyalar:** `.gitignore`, `package.json`, `tsconfig.json`, `vite.config.ts`, `vitest.config.ts`, `firebase.json`, `.firebaserc`, `functions/package.json`, `scripts/emulators.mjs`, `web/index.html`, `web/src/main.tsx`, `web/src/App.tsx`, `shared/constants.ts`, `shared/constants.test.ts`
 - [ ] JDK 21'i yöneticisiz kur: `https://aka.ms/download-jdk/microsoft-jdk-21-windows-x64.zip` (+ `.sha256sum.txt` ile doğrula) → `%LOCALAPPDATA%\Programs\jdk-21`. PATH'e ekleme.
 - [ ] `git init`, `.gitignore` (Genel Kısıtlar'daki liste + `node_modules/`, `functions/lib/`, `dist/`).
@@ -79,7 +79,7 @@ Storage: projects/{p}/disciplines/{d}/drawings/{code}/{revId}.pdf
 - [ ] Doğrula: `npm test` geçer; `npm run emulators` → `http://127.0.0.1:4000` açılır; `npm run dev` → sayfada "MSK Metraj" yazısı.
 - [ ] Commit: `chore: proje iskeleti ve emülatör ortamı`
 
-### Görev 2: Sayı biçimi ve alan türleri
+### Task 2: Sayı biçimi ve alan türleri
 **Dosyalar:** `shared/number.ts`, `shared/types.ts`, `shared/number.test.ts`
 **Üretir:**
 ```ts
@@ -109,7 +109,7 @@ Etiketler: Kontrol edilmedi · Kontrol edildi · Düzeltildi · Sorunlu · Yenid
 - [ ] Testler: `formatTr(2847.7,'m²')==='2.847,70'`, `formatTr(78,'adet')==='78'`, `formatTr(null)==='—'`; `parseTrNumber('1.234,56')===1234.56`, `('1234,5')===1234.5`, `('1.234')===1234`, `('12')===12`; `'2847.7'`, `'1,2,3'`, `'abc'`, `''` → hata, `'2847.7'` mesajı "Ondalık için virgül kullanın" içerir.
 - [ ] Uygula, testleri geçir, commit `feat(shared): sayı biçimi ve alan türleri`.
 
-### Görev 3: Formül dili
+### Task 3: Formül dili
 **Dosyalar:** `shared/formula/parse.ts`, `shared/formula/evaluate.ts`, `shared/formula/formula.test.ts`
 Dil (Türk Excel'i gibi): ondalık **virgül**, argüman ayırıcı **noktalı virgül**; `+ - * /`, parantez, tekli eksi; kalem başvurusu `/[A-Z]\.\d+[a-z]?(\.\d+[a-z]?)*/` (ör. `B.1.3`, `C.1a`); fonksiyonlar `MAHAL(alan; "değer")` (alan: `kat|tavan_alt|tavan_ust|doseme` → Room `floor|ceilingLower|ceilingUpper|flooring`, alanı toplar, eşitlik büyük/küçük harf duyarsız `tr`), `CEPHE("FM-01")` (sütun toplamı). Fonksiyon adları harf duyarsız.
 **Üretir:**
@@ -124,7 +124,7 @@ evaluate(e: Expr, ctx: { item(id): number|null|undefined; rooms: Room[]; facade:
 - [ ] Testler: `evaluate(parse('A.5 - B.1'))` = 8392.5−2847.7; `'B.1 * 2'`; `'805,5 + 1239 + 803,2'` = 2847.7 (±1e-9) ve `isConstant`; `'MAHAL(kat; "Zemin Kat")'` iki odalı örnekte doğru toplam, `"zemin kat"` da eşleşir; `'CEPHE("FM-02/FM-03")'`; `formulaDeps('C.1a * C.1b').items` = `['C.1a','C.1b']`; null kalem → sonuç null; bilinmeyen kalem → `FormulaError('Bilinmeyen kalem: X.9')`; `'2.5 * B.1'` → hata "Ondalık için virgül"; `'B.1 +'` → konumlu hata; `'MAHAL(renk; "x")'` → geçerli alanları listeleyen hata; `/ 0` → `FormulaError('Sıfıra bölme')`.
 - [ ] Uygula (elle yazılmış özyinelemeli ayrıştırıcı), geçir, commit `feat(shared): formül dili`.
 
-### Görev 4: Yeniden hesap, döngü, bağlı kalem planı, pafta başvuruları
+### Task 4: Yeniden hesap, döngü, bağlı kalem planı, pafta başvuruları
 **Dosyalar:** `shared/recompute.ts`, `shared/drawings.ts`, `shared/recompute.test.ts`, `shared/drawings.test.ts`
 **Üretir:**
 ```ts
@@ -144,7 +144,7 @@ expandDrawingRefs(text: string, known: string[]): { codes: string[]; unresolved:
 - [ ] Testler (drawings): `'01…04-02-100'` → 4 kod; `'01…04-02-300, 04-01-100'` → 5; `'01/02-04-100…400'` → 8; `'02-03-100/200'` → 2; `'05-100, 05-200'` → 8; `'01/02-04-xxx'` → 8; `'Görünüşler, 00-09-100'` → 9; `'Genel not 10'` → `codes=[]`, `unresolved=['Genel not 10']`.
 - [ ] Uygula, geçir, commit `feat(shared): yeniden hesap ve pafta başvuruları`.
 
-### Görev 5: Excel aktarımı ve mutabakat
+### Task 5: Excel aktarımı ve mutabakat
 **Dosyalar:** `scripts/lib/admin.ts`, `scripts/excel/read.ts`, `scripts/excel/translate.ts`, `scripts/excel/build.ts`, `scripts/excel/reconcile.ts`, `scripts/import-excel.ts`, testler `scripts/excel/*.test.ts`
 **Üretir:**
 ```ts
@@ -160,14 +160,14 @@ Mutabakat: her kalem (E), malzeme (H), Özet (C), Cephe toplamları (7. satır, 
 - [ ] Gerçek dosyayla çalıştır: `npm run import -- --file "Projeler/261102_4199_MSK-Kesin Proje Teslim/MSK Kongre Merkezi – Malzeme Listesi ve Metraj.xlsx" --reset` → `mismatches: 0`; emülatör arayüzünde 83 kalem, 54 mahal, 59 malzeme, 13 bulgu.
 - [ ] Commit `feat(scripts): Excel aktarımı ve mutabakat`.
 
-### Görev 6: Güvenlik kuralları ve ilk yönetici
+### Task 6: Güvenlik kuralları ve ilk yönetici
 **Dosyalar:** `firestore.rules`, `storage.rules`, `firestore.indexes.json`, `scripts/bootstrap-admin.ts`, `tests/rules/firestore.emu.test.ts`, `tests/rules/storage.emu.test.ts`
 Kurallar: kullanıcı dokümanı yok ya da `active != true` → her şey red. `users/{uid}` okuma: kendisi veya admin; yazma yok. Disiplin altı okuma: `access[p][d].view`; `drawings/**` okuma ek olarak `.drawings`. Yazma yok; istisnalar: `comments` oluşturma (view, `by.uid == auth.uid`, `at == request.time`, metin 1–2000), `findings` oluşturma/güncelleme (admin|kontrolcu, durum değerleri listede, oluşturmada doküman yoksa). Storage okuma: `firestore.get(users/uid)` ile active + drawings; yazma: admin, `application/pdf`, < 100 MB. Dizin: `history` için `target.type, target.id, at desc`.
 `bootstrap-admin.ts --email --name --password`: Auth kullanıcısı + `users` dokümanı (admin, msk-4199/A view+drawings).
 - [ ] Testler: satın alma rolü kalemi okur, `drawings` ve PDF'i okuyamaz; kullanıcı dokümanı olmayan giriş yapmış kullanıcı hiçbir şey okuyamaz; kalem doğrudan yazma herkes için red; yorum başka uid adına red; **erişim kaldırılınca aynı oturumda PDF okuma red** (İnceleme Odağı 2); pasif kullanıcı red.
 - [ ] Geçir, commit `feat: güvenlik kuralları ve ilk yönetici betiği`.
 
-### Görev 7: Fonksiyon çekirdeği, düzeltme ve formül
+### Task 7: Fonksiyon çekirdeği, düzeltme ve formül
 **Dosyalar:** `functions/src/context.ts`, `functions/src/commit.ts`, `functions/src/items.ts`, `functions/src/schemas.ts`, `functions/src/index.ts`, `functions/src/test/seed.ts`, `functions/src/items.emu.test.ts`
 **Üretir:**
 ```ts
@@ -183,7 +183,7 @@ Kurallar: rol admin|kontrolcu; gerekçe boş olamaz ("Gerekçe zorunludur."); ke
 - [ ] Testler (emülatör, tohum: A.5, B.1, B.2=`A.5 - B.1`, B.2.1=`B.2`, malzeme #1=`B.2`, üç rol): B.1 düzeltmesi → B.2, B.2.1, #1 güncel, geçmişte 1 `correct` + bağlı `cascade` kayıtları; satın alma → permission-denied; boş gerekçe → hata; kesinleşmiş kalem → hata; döngü formülü → hata ve hiçbir doküman değişmez; **eşzamanlı** `correctItem(B.1)` ve `correctItem(A.5)` → sonunda B.2 = A.5 − B.1 (İnceleme Odağı 1).
 - [ ] Geçir, commit `feat(functions): değişiklik çekirdeği, düzeltme ve formül`.
 
-### Görev 8: Diğer metraj işlemleri
+### Task 8: Diğer metraj işlemleri
 **Dosyalar:** `functions/src/items.ts`, `functions/src/sources.ts`, `functions/src/index.ts`, `functions/src/*.emu.test.ts`
 **Üretir (callable adlarıyla aynı):**
 ```ts
@@ -203,7 +203,7 @@ Kesinleşmiş kalemde `setItemStatus`/`updateItemInfo`/`cancelItem` reddedilir.
 - [ ] Testler: her işlemin mutlu yolu ve yetki reddi; kesinleşmiş kalem değişikliği reddi; bağımlısı olan kalemi iptal → bağımlıları listeleyen hata; aynı pozla `createItem` → hata; mahal alanı değişince A.1 → F.2 zinciri güncellenir ve `room` + `cascade` geçmişi yazılır; kesinleşmiş türetilen kalemin üst kalemi değişince değeri güncellenir ve `lockWarning='ust_kalem'`; `acknowledgeItem` uyarıyı temizler.
 - [ ] Geçir, commit `feat(functions): durum, kesinleştirme ve kaynak değişiklikleri`.
 
-### Görev 9: Web altyapısı – bağlantı, giriş, kabuk
+### Task 9: Web altyapısı – bağlantı, giriş, kabuk
 **Dosyalar:** `web/src/firebase.ts`, `web/src/auth/AuthProvider.tsx`, `web/src/auth/LoginPage.tsx`, `web/src/layout/Shell.tsx`, `web/src/data/hooks.ts`, `web/src/data/api.ts`, `web/src/styles.css`, `web/.env.development`, testler
 **Üretir:**
 ```ts
@@ -218,27 +218,27 @@ can(profile, 'edit'|'admin'|'drawings'): boolean     // shared/access.ts
 - [ ] Testler: `can` rol tablosu; Shell'de satın alma rolü "Kullanıcılar"ı görmez; LoginPage hatalı şifrede "E-posta veya şifre hatalı." gösterir (auth modülü taklit edilerek).
 - [ ] Doğrula: emülatörde `bootstrap-admin` ile oluşturulan kullanıcıyla giriş → menü görünür. Commit `feat(web): giriş ve uygulama kabuğu`.
 
-### Görev 10: Metraj sayfası – liste ve detay
+### Task 10: Metraj sayfası – liste ve detay
 **Dosyalar:** `web/src/metraj/MetrajPage.tsx`, `ItemList.tsx`, `filter.ts`, `ItemDetail.tsx`, `HistoryList.tsx`, `web/src/common/Comments.tsx`, testler
-Üç bölmeli düzen (spec 6.1): sol ağaç (grup başlıkları katlanır, durum simgesi ○ ✓ ✎ ⚠ ↻ 🔒, uyarılı kilitte 🔒!), orta görüntüleyici yeri (Görev 14'e kadar "Pafta seçin"), sağ detay: poz, ad, kod, birim, miktar (`formatTr`), Excel'deki değer farklıysa gösterilir, tür + formül, yöntem, kaynak metni + pafta kodları, güven, durum + uyarı, sekmeler Geçmiş · Yorumlar. İptal kalemler varsayılan gizli.
+Üç bölmeli düzen (spec 6.1): sol ağaç (grup başlıkları katlanır, durum simgesi ○ ✓ ✎ ⚠ ↻ 🔒, uyarılı kilitte 🔒!), orta görüntüleyici yeri (Task 14'e kadar "Pafta seçin"), sağ detay: poz, ad, kod, birim, miktar (`formatTr`), Excel'deki değer farklıysa gösterilir, tür + formül, yöntem, kaynak metni + pafta kodları, güven, durum + uyarı, sekmeler Geçmiş · Yorumlar. İptal kalemler varsayılan gizli.
 **Üretir:** `filterItems(items, f: {text?, group?, confidence?, status?, drawing?, unmeasurable?, showCancelled?}): Item[]`; `<Comments target={{type,id}} />`.
 - [ ] Testler: `filterItems` her ölçüt (ölçülemedi = measured && value null && !cancelled; metin poz/ad/kodda arar, harf duyarsız `tr`); HistoryList bağlı değişiklik kaydında "Bağlı değişiklik – B.1 düzeltmesi" yazar.
 - [ ] Commit `feat(web): metraj listesi ve kalem detayı`.
 
-### Görev 11: Metraj işlemleri arayüzü
+### Task 11: Metraj işlemleri arayüzü
 **Dosyalar:** `web/src/metraj/CorrectionForm.tsx`, `FormulaForm.tsx`, `StatusActions.tsx`, `NewItemForm.tsx`, testler
 Düzeltme (yeni miktar `parseTrNumber`, gerekçe, isteğe bağlı güven; türetilen kalemde "Formül bağı kopacak" uyarısı), formül (canlı ayrıştırma hatası + önizleme değeri `evaluate` ile), durum düğmeleri (rol ve duruma göre: Kontrol edildi · Sorunlu · Yeniden kontrol · Kesinleştir · Kilidi aç · Uyarıyı onayla), yeni kalem, iptal. Kesinleşmiş kalemde düzenleme denetimleri kapalı.
 - [ ] Testler: gerekçesiz gönder düğmesi pasif; `'2847.7'` girilince Türkçe uyarı; formül alanına `B.1 +` → konumlu hata, gönderilemez; **api hatası (ör. ağ) olunca form değeri ve gerekçe korunur, hata mesajı görünür** (İnceleme Odağı 3); satın alma rolünde form görünmez.
 - [ ] Doğrula: emülatörde B.1 düzelt → B.2 ve bağlılar ekranda güncellenir, geçmişte görünür. Commit `feat(web): metraj düzeltme ve kesinleştirme`.
 
-### Görev 12: Diğer sayfalar
+### Task 12: Diğer sayfalar
 **Dosyalar:** `web/src/pages/MaterialsPage.tsx`, `RoomsPage.tsx`, `FacadePage.tsx`, `FindingsPage.tsx`, `SummaryPage.tsx`, `MethodPage.tsx`, `shared/material.ts`, testler
 **Üretir:** `materialStatus(m, itemsById): { label: string; finalized: number; total: number }` → bağlı kalem yok veya değer null: "Ölçülemedi"; hepsi kesin ve uyarısız: "Kesin"; diğer: "`x/y` kesin". `facadeTotals(rows): Record<FacadeColumn|'total', number>`.
 Malzeme: tablo + formül düzenleme (`setMaterialFormula`) + metraj durumu. Mahal ve Cephe: hücre düzenleme → gerekçe penceresi → `updateRoom`/`updateFacadeCell`; Cephe toplam satırı hesaplanır. Proje Kontrol: durum seçimi (Açık · Mimara iletildi · Çözüldü), yeni bulgu, yorumlar. Özet: `summary` formülleri + durum bazında kalem sayıları (kaç kalem kontrol edildi/kesinleşti). Yöntem: metin.
 - [ ] Testler: `materialStatus` üç durum; `facadeTotals` Excel değerleri (FM-01 = 1.219,5, toplam 2.894,7); Özet "Alüminyum panel cephe" = 1.824 (aktarılan veriyle).
 - [ ] Commit `feat(web): malzeme, mahal, cephe, proje kontrol, özet sayfaları`.
 
-### Görev 13: Pafta yükleme ve Paftalar sayfası
+### Task 13: Pafta yükleme ve Paftalar sayfası
 **Dosyalar:** `scripts/upload-drawings.ts`, `scripts/register.ts`, `web/src/pages/DrawingsPage.tsx`, testler
 `register.ts`: `parseRegister(raw): DrawingMeta[]` — "DD_KESİN PROJE" sayfası, seri başlığı satırları (`01 VAZIYET PLANI` …) ve pafta satırları (ad, kod, ölçek, kağıt); zone koddan.
 `upload-drawings.ts --dir <PDF> --register <xlsx>`: her pafta için PDF'i pdfjs-dist (legacy) ile açıp sayfa boyutu (pt, ölçek 1) ve sayfa sayısını okur (>1 ise uyarı), `r0` revizyonu ("DD 02.11.2026") olarak Storage'a yükler, `drawings` + `revisions` dokümanlarını yazar. Register'da olup PDF'i olmayan / tersi → rapor.
@@ -246,7 +246,7 @@ Malzeme: tablo + formül düzenleme (`setMaterialFormula`) + metraj durumu. Maha
 - [ ] Gerçek çalıştırma: 40 pafta yüklendi, eksik 0. Paftalar sayfası seri bazında liste (kod, ad, ölçek, güncel revizyon) gösterir; pafta yetkisi olmayana "Pafta görme yetkiniz yok".
 - [ ] Commit `feat: pafta yükleme ve pafta listesi`.
 
-### Görev 14: Pafta görüntüleyici
+### Task 14: Pafta görüntüleyici
 **Dosyalar:** `web/src/viewer/viewport.ts`, `pdf.ts`, `SheetViewer.ts`, `SheetViewerView.tsx`, `web/src/viewer/viewport.test.ts`, `web/src/no-download-url.test.ts`
 **Üretir:**
 ```ts
@@ -262,7 +262,7 @@ Taban doku: tüm sayfa, uzun kenar 4096 px. Detay: kontroller durduktan 200 ms s
 - [ ] Testler: `fitView(2384,1684,1200,800)` sayfa tam sığar ve ortalanır; `visibleRect` sayfa dışını kırpar, tamamen dışarıdaysa null; `detailScale` 4096 px sınırını aşmaz; geç gelen detay sonucu (eski istek no) atılır (SheetViewer'ın istek sayacı saf yardımcıya ayrılarak test edilir) (İnceleme Odağı 5); `web/src` içinde `getDownloadURL` geçmez.
 - [ ] Doğrula (gerçek uygulama): 01-02-300 çatı planında en yakın zoom'da ölçü yazıları okunur; hızlı kaydırmada görüntü kaymaz. Commit `feat(web): three.js pafta görüntüleyici`.
 
-### Görev 15: Pafta revizyonları
+### Task 15: Pafta revizyonları
 **Dosyalar:** `functions/src/drawings.ts`, `functions/src/drawings.emu.test.ts`, `web/src/pages/RevisionUpload.tsx`, `web/src/viewer/RevisionPicker.tsx`
 **Üretir:**
 ```ts
@@ -275,7 +275,7 @@ createDrawing({code, title, series, seriesTitle, zone, scale, paper})           
 - [ ] Testler: revizyon sonrası bağlı kalem durumları ve geçmiş; Storage'da dosya yoksa hata; admin dışı red.
 - [ ] Commit `feat: pafta revizyonları ve karşılaştırma`.
 
-### Görev 16: Kullanıcı yönetimi
+### Task 16: Kullanıcı yönetimi
 **Dosyalar:** `functions/src/users.ts`, `functions/src/users.emu.test.ts`, `web/src/pages/UsersPage.tsx`
 **Üretir:**
 ```ts
@@ -286,14 +286,14 @@ Kendi yönetici rolünü kaldırma / kendini pasifleştirme → "Kendi yönetici
 - [ ] Testler: davet akışı, yinelenen e-posta, kendini kilitleme reddi, admin dışı red.
 - [ ] Commit `feat: kullanıcı davet ve yetki yönetimi`.
 
-### Görev 17: Excel çıktısı
+### Task 17: Excel çıktısı
 **Dosyalar:** `web/src/export/excel.ts`, `web/src/export/excel.test.ts`, `web/src/pages/ExportPage.tsx`
 **Üretir:** `buildPurchaseWorkbook(d: ExportData): Promise<ArrayBuffer>`, `buildFullWorkbook(d: ExportData): Promise<ArrayBuffer>` (ExcelJS dinamik import).
 Satın alma: No · Grup · Malzeme · Proje Kodu · Kullanım Yeri · Birim · Miktar · Bağlı Kalemler · Metraj Durumu (`materialStatus`) · Son Değişiklik · Not. Tam metraj: Özet, Metraj (Poz · İş Kalemi · Proje Kodu · Birim · Miktar · Formül · Hesap Yöntemi · Kaynak Pafta · Güven · Durum · Son Değişiklik), Malzeme Listesi, Mahal Listesi, Cephe, Proje Kontrol. Sayılar sayısal hücre, `#,##0.00` (adet `#,##0`). Dosya adları `MSK-4199_Satinalma_Malzeme_YYYY-MM-DD.xlsx`, `MSK-4199_Metraj_YYYY-MM-DD.xlsx`.
 - [ ] Testler: üretilen kitap geri okunur; sayfa adları, başlık satırı, #39 miktarı 574,19 ve durum metni doğru.
 - [ ] Commit `feat(web): Excel çıktısı`.
 
-### Görev 18: Kabul turu ve çalıştırma kılavuzu
+### Task 18: Kabul turu ve çalıştırma kılavuzu
 **Dosyalar:** `README.md` (Türkçe)
 - [ ] README: kurulum (Node, JDK yöneticisiz), `npm run emulators`, ilk yönetici, Excel aktarımı, pafta yükleme, `npm run dev`, testler. Emülatör verisinin yalnız deneme için olduğu, canlıya ayrı aktarılacağı uyarısı.
 - [ ] Uçtan uca elle kabul (emülatörde): yönetici girişi → kontrolcü davet → kontrolcü B.1'i düzeltir → B.2 zinciri ve malzemeler güncellenir, geçmişte görünür → yönetici kesinleştirir → üst kalem değişince uyarı → satın alma kullanıcısı paftaları göremez, Excel çıktısı alır → 01-02-300 için yeni revizyon yüklenir → bağlı kalemler "Yeniden kontrol gerekli".
