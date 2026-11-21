@@ -8,6 +8,8 @@ import { gfItems } from './gf-items';
 import type { Takeoff, TakeoffItem } from './model';
 import { writeReport } from './report';
 import { buildGfRooms } from './rooms-gf';
+import { evaluate } from '../../../shared/formula/evaluate';
+import { parseFormula } from '../../../shared/formula/parse';
 
 const GROUPS = [
   { key: 'A', title: 'GENEL ALANLAR' },
@@ -31,6 +33,22 @@ async function main() {
   const items: TakeoffItem[] = [...gfItems(gfDxf, gfFlat, gf.rows, gf.plate)];
   const findings: Takeoff['findings'] = gf.notes.map((n) => ({ topic: 'Mahal alanı', drawings: '4199-A-DD-01-02-100', finding: n, suggestion: 'Mahal sınırını/etiketini düzeltin.' }));
 
+  // Döşeme kaplaması: halı salonlarda (döşeme detayı HALI KAPLAMA), diğer mahaller ID projesine göre
+  const carpet = gf.rows.filter((r) => /^(KÜÇÜK )?SALON \d+$/.test(r.name));
+  carpet.forEach((r) => (r.flooring = 'Halı kaplama'));
+  gf.rows.filter((r) => r.floor === 'Zemin Kat' && !carpet.includes(r)).forEach((r) => (r.flooring = 'ID projesine göre'));
+  items.push({
+    poz: 'F.1', group: 'F', name: 'Halı kaplama – salonlar ve küçük salonlar', unit: 'm²', value: Math.round(carpet.reduce((s, r) => s + r.area, 0) * 100) / 100,
+    method: 'Döşeme detayında (00-09-100) HALI KAPLAMA / ŞAP / SAHA BETONU dizilimi salon kesitinde gösteriliyor. Halı, Salon 01/02/03 ve Küçük Salon 01/02/03 mahallerinin net alanlarına (mahal sınırlarından) uygulandı.',
+    sources: [{ drawing: '4199-A-DD-00-09-100', where: 'döşeme dizilimi (HALI KAPLAMA 10 mm)' }, { drawing: '4199-A-DD-01-02-100', where: 'mahal sınırları A_Nplt_Area' }],
+    confidence: 'Orta', lines: carpet.map((r) => ({ label: `${r.code} ${r.name}`, value: Math.round(r.area * 100) / 100, unit: 'm²' })),
+    notes: ['Detay yalnız salon kesitinde; küçük salonlarda da halı varsayıldı.'],
+  });
+  items.push({
+    poz: 'F.2', group: 'F', name: 'Diğer mahaller – döşeme kaplaması (tür ID projesine göre)', unit: 'm²', value: null, formula: 'A.1 - F.1',
+    method: 'Zemin kat net alanından halı alanı çıkarıldı. Kaplama türü mimari paftalarda tanımlı değil (Genel not: ID projesine göre).', sources: [], confidence: 'Orta', lines: [],
+  });
+
   // Çatı planı
   if (existsSync('scripts/takeoff/metraj/roof-items.ts')) {
     const { roofItems } = await import('./roof-items');
@@ -50,6 +68,29 @@ async function main() {
       if (k) Object.assign(r, { ceilingLower: k.lower, ceilingUpper: k.upper, ch: k.ch });
     }
   }
+
+  for (const [file, fn] of [['facade-items', 'facadeItems'], ['layer-items', 'layerItems']] as const) {
+    if (!existsSync(`scripts/takeoff/metraj/${file}.ts`)) continue;
+    const mod = (await import(`./${file}`)) as Record<string, () => { items: TakeoffItem[]; findings: Takeoff['findings'] }>;
+    const r = mod[fn]();
+    items.push(...r.items);
+    findings.push(...r.findings);
+  }
+
+  // Formüllü kalemlerin değerleri (uygulamadaki formül diliyle)
+  const vals: Record<string, number | null> = Object.fromEntries(items.filter((i) => !i.formula).map((i) => [i.poz, i.value]));
+  for (let pass = 0; pass < 10; pass++) {
+    for (const i of items.filter((x) => x.formula)) {
+      try {
+        i.value = evaluate(parseFormula(i.formula!), { item: (id) => (id in vals ? vals[id] : undefined), rooms: [], facade: [] });
+        if (i.value !== null) i.value = Math.round(i.value * 100) / 100;
+        vals[i.poz] = i.value;
+      } catch {
+        /* bağımlı kalem henüz hesaplanmadı */
+      }
+    }
+  }
+  for (const i of items.filter((x) => x.formula && !(x.poz in vals))) findings.push({ topic: 'Formül', drawings: '-', finding: `${i.poz} formülü hesaplanamadı: ${i.formula}`, suggestion: 'Başvurulan kalemi kontrol edin.' });
 
   const order = (p: string) => p.split('.').map((x) => (/^\d+$/.test(x) ? x.padStart(4, '0') : x)).join('.');
   items.sort((a, b) => order(a.poz).localeCompare(order(b.poz)));
