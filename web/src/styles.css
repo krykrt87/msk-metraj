@@ -720,50 +720,6 @@ label.check {
   padding-left: 16px;
   font-size: var(--fs-1);
 }
-.bd-table td {
-  font-size: var(--fs-1);
-}
-.bd-note {
-  color: var(--ink-2);
-}
-.bd-table tr.expandable {
-  cursor: pointer;
-}
-.bd-table tr.expandable:hover td {
-  background: var(--select);
-}
-.calc-row > td {
-  background: var(--paper);
-  padding: 6px 8px 10px 20px;
-}
-.calc-table {
-  border-collapse: collapse;
-  width: 100%;
-  font-family: var(--font-data);
-  font-size: var(--fs-1);
-}
-.calc-table th {
-  text-align: left;
-  color: var(--ink-2);
-  font-weight: 600;
-  border-bottom: 1px solid var(--ink-2);
-  padding: 3px 6px;
-}
-.calc-table td {
-  border-bottom: 1px solid var(--rule);
-  padding: 3px 6px;
-}
-.calc-table .num {
-  text-align: right;
-  white-space: nowrap;
-}
-.calc-table tr.minus td {
-  color: var(--redline);
-}
-.calc-table tr.total td {
-  font-weight: 600;
-  border-top: 1px solid var(--ink-2);
-}
 .collapsible {
   display: block;
   width: 100%;
@@ -784,74 +740,6 @@ label.check {
 }
 .collapsible:hover .col-toggle {
   text-decoration: underline;
-}
-
-/* Hesap detayı sayfası */
-.calc-page {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 16px;
-}
-.calc-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.calc-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.calc-group {
-  margin-bottom: 16px;
-}
-.calc-group-title {
-  font-size: var(--fs-1);
-  color: var(--ink-2);
-  border-bottom: 1.5px solid var(--ink);
-  padding: 6px 0;
-}
-.calc-item {
-  border-bottom: 1px solid var(--rule);
-  background: var(--panel);
-}
-.calc-item-head {
-  display: grid;
-  grid-template-columns: 16px 56px 1fr auto;
-  gap: 8px;
-  align-items: baseline;
-  width: 100%;
-  border: 0;
-  background: none;
-  padding: 7px 10px;
-  font: inherit;
-  font-family: var(--font-data);
-  color: var(--ink);
-  text-align: left;
-  cursor: pointer;
-}
-.calc-item-head:hover {
-  background: #f9faf9;
-}
-.calc-item.open .calc-item-head {
-  background: var(--select);
-}
-.calc-item-head .poz {
-  font-weight: 600;
-}
-.calc-item-head .qty {
-  white-space: nowrap;
-  font-weight: 600;
-}
-.calc-item-body {
-  padding: 8px 12px 14px 34px;
-}
-.calc-method {
-  margin: 0 0 8px;
-  font-size: var(--fs-1);
 }
 
 /* Cetvel: Excel benzeri sütunlar */
