@@ -11,6 +11,7 @@ interface NavItem {
 }
 const NAV: NavItem[] = [
   { to: '/', label: 'Metraj' },
+  { to: '/hesap', label: 'Hesap Detayı' },
   { to: '/malzeme', label: 'Malzeme Listesi' },
   { to: '/mahal', label: 'Mahal Listesi' },
   { to: '/cephe', label: 'Cephe' },
