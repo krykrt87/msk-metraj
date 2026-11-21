@@ -72,6 +72,7 @@ export function MetrajPage({ profile }: { profile: UserProfile }) {
               model={m3.model}
               highlight={highlight}
               itemName={(p) => byPoz.get(p)?.name}
+              onClearSelection={() => setParams({})}
               onSelectPoz={(p) => {
                 const it = byPoz.get(p);
                 if (it) setParams({ kalem: it.id });

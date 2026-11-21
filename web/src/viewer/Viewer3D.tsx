@@ -29,13 +29,18 @@ export default function Viewer3D({
   model,
   highlight,
   onSelectPoz,
+  onClearSelection,
   itemName,
 }: {
   model: Model3;
   highlight: Set<string> | null;
   onSelectPoz: (poz: string) => void;
+  /** Kalem seçimini kaldırır (bütün model görünür). */
+  onClearSelection: () => void;
   itemName: (poz: string) => string | undefined;
 }) {
+  const clearSel = useRef(onClearSelection);
+  clearSel.current = onClearSelection;
   const host = useRef<HTMLDivElement>(null);
   const overlay = useRef<HTMLDivElement>(null);
   const api = useRef<{
@@ -291,6 +296,7 @@ export default function Viewer3D({
     if (!a) return;
     const hits = highlight?.size ? a.meshes.filter((m) => (m.userData.el as El3).items.some((p) => highlight.has(p))) : [];
     if (hits.length) a.fit(hits);
+    else if (!highlight?.size) a.fit(a.meshes.filter((m) => m.visible)); // seçim kalktı: bütün model
     setPicked(null);
   }, [highlight]);
 
@@ -322,7 +328,9 @@ export default function Viewer3D({
           meas.current.start = null;
           if (meas.current.preview) (api.current?.scene.remove(meas.current.preview), (meas.current.preview = null));
           setHint('Birinci noktayı tıklayın');
-        } else setMode('seç');
+        } else if (state.current.mode === 'ölç') setMode('seç');
+        else if (state.current.picked) setPicked(null);
+        else if (state.current.highlight?.size) clearSel.current();
       } else if (e.key === 'm' || e.key === 'M') setMode((m) => (m === 'ölç' ? 'seç' : 'ölç'));
       else if (e.key === 'f' || e.key === 'F') {
         const a = api.current;
@@ -351,6 +359,11 @@ export default function Viewer3D({
         <button type="button" onClick={clearMeas}>
           Ölçümleri sil
         </button>
+        {!!highlight?.size && (
+          <button type="button" className="v3-clear" onClick={onClearSelection} title="Kısayol: Esc">
+            Seçimi kaldır ×
+          </button>
+        )}
         {backend && <span className="v3-badge">{backend}</span>}
       </div>
       <fieldset className="v3-layers">

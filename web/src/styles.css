@@ -866,6 +866,10 @@ label.check {
   color: var(--ink);
   cursor: pointer;
 }
+.v3-tools button.v3-clear {
+  border-color: #e8590c;
+  color: #b8440a;
+}
 .v3-tools button.on {
   background: var(--stamp);
   border-color: var(--stamp);
