@@ -6,6 +6,7 @@ import { area, bbox, length, pointInPolygon, regionArea, type P } from '../lib/g
 import { decomposeArea, decomposeLength, decomposeRegion, mergeRows, type CalcRow } from '../lib/decompose';
 import type { RoomRow, TakeoffItem } from './model';
 import { model3d } from './model3d';
+import { roomsNear } from './rooms-index';
 
 const GF = '4199-A-DD-01-02-100';
 const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -166,6 +167,11 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     doorGroups.set(k, (doorGroups.get(k) ?? 0) + 1);
   }
   const sorted = [...doorGroups.entries()].sort((a, b) => a[0].localeCompare(b[0], 'tr'));
+  /** Kapının bağladığı mahaller (projedeki adlarla); tek mahal varsa dış kapı. */
+  const doorPlace = (p: P) => {
+    const near = roomsNear(p, 1200).slice(0, 2).map((r) => r.label);
+    return near.length === 2 ? `${near[0]} ↔ ${near[1]}` : near.length === 1 ? `${near[0]} – dış kapı` : 'mahal bulunamadı';
+  };
   const doorKey = (d: (typeof doors)[number]) => (d.leaves.length === 0 ? 'Kanat yayı olmayan kapı (sürgülü/özel)' : d.leaves.length === 1 ? `Tek kanatlı kapı – kanat ${d.leaves[0] / 10} cm` : `Çift kanatlı kapı – kanatlar ${d.leaves.map((x) => x / 10).join(' + ')} cm`);
   const doorNo = new Map<string, number>();
   for (const d of doors) {
@@ -183,7 +189,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
       lines: doors.filter((d) => {
         const kk = d.leaves.length === 0 ? 'Kanat yayı olmayan kapı (sürgülü/özel)' : d.leaves.length === 1 ? `Tek kanatlı kapı – kanat ${d.leaves[0] / 10} cm` : `Çift kanatlı kapı – kanatlar ${d.leaves.map((x) => x / 10).join(' + ')} cm`;
         return kk === k;
-      }).map((d) => ({ label: `blok ${d.name}`, value: 1, unit: 'adet', note: `konum x=${(d.at.x / 1000).toFixed(1)} y=${(d.at.y / 1000).toFixed(1)} m (${d.block})` })),
+      }).map((d) => ({ label: doorPlace(d.at), value: 1, unit: 'adet', note: `blok ${d.name} · konum x=${(d.at.x / 1000).toFixed(1)} y=${(d.at.y / 1000).toFixed(1)} m (${d.block})` })),
     });
   });
   items.push({

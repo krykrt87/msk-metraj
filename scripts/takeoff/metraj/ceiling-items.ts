@@ -11,6 +11,7 @@ import { decomposeRegion, gridRects, mergeRows, type CalcRow } from '../lib/deco
 import { extractRooms, type RoomLabel, type RoomPoly } from '../rooms';
 import type { Line, Source, TakeoffItem } from './model';
 import { model3d } from './model3d';
+import { roomsNear, sideOf } from './rooms-index';
 
 const CEIL = '4199-A-DD-01-05-100 / 05-200';
 const PLAN = '4199-A-DD-01-02-100';
@@ -237,7 +238,9 @@ export function ceilingItems(
     const ip = interiorPoint(h.g);
     const p = roomPolys.find((q) => pointInPolygon(ip, q.pts));
     if (p) return { text: polyLabel.has(p.id) ? `${lname(polyLabel.get(p.id)!)} sınırı içinde` : `etiketsiz sınır #${p.id}`, polys: [p.pts] };
-    return { text: `hatch #${h.idx} – mahal bulunamadı`, polys: [] };
+    // mahal dışında (ör. cephe dışı saçak altı): en yakın zemin kat mahalleriyle adlandır
+    const near = roomsNear(ip, 12000).slice(0, 2).map((r) => r.label);
+    return { text: near.length ? `${near.join(' / ')} önü – mahal dışı, ${sideOf(centre(h.g), 'ew')} kesimi` : `tarama #${h.idx} – mahal bulunamadı`, polys: [] };
   };
   const roomOf = (h: CH) => roomInfo(h).text;
   const planName = (h: CH) => (h.lvl === 'L' ? 'alt tavan planı' : 'üst tavan planı');
@@ -428,9 +431,27 @@ export function ceilingItems(
 
   // D.13 saçak altı
   const sof = byCode('SOFFIT');
+  // iki iç içe bant: dıştaki (sınır kutusu büyük) saçak/kanopi altı, içteki teras döşemesinin cephe dışındaki altı
+  const bboxA = (h: CH) => {
+    const b = bbox(h.g.flat());
+    return (b.maxX - b.minX) * (b.maxY - b.minY);
+  };
+  const outerSof = sof.reduce<CH | null>((a, h) => (!a || bboxA(h) > bboxA(a) ? h : a), null);
   const sofLines = sof.map((h) => {
     const l = hatchLine(h);
-    return { ...l, label: l.label.replace('mahal bulunamadı', 'mahal bulunamadı (cephe dışı saçak altı)') };
+    // bant boyunca en sık en yakın mahal
+    const votes = new Map<string, number>();
+    const pts = h.g.flat();
+    for (let k = 0; k < pts.length; k += Math.max(1, Math.floor(pts.length / 60))) {
+      const r = roomsNear(pts[k], 15000)[0];
+      if (r) votes.set(r.label, (votes.get(r.label) ?? 0) + 1);
+    }
+    const near = [...votes].sort((x, y) => y[1] - x[1])[0]?.[0];
+    const what = h === outerSof ? 'Saçak (kanopi) altı – parapet dışı' : 'Teras döşemesi altı – cam cephe ile parapet arası';
+    const ch = hatchCH(h).join(' / ');
+    const label = `${what}${near ? `, ${near} önü` : ''} (üst tavan planı${ch ? `, CH ${ch}` : ''})`;
+    lineOf.set(h, label);
+    return { ...l, label };
   });
   const ovSofLower = overlapM2(raster(sof.map((h) => h.g)), raster(lowerH.map((h) => h.loops)));
   mk(13, null, 'Saçak altı alüminyum levha kaplama (dış tavan)', 'm²', sum(sof),
@@ -548,7 +569,7 @@ export function ceilingItems(
     const ch = Number(hatchCH(h)[0]);
     const z = (h.mf ? 3.8 : 0) + (ch > 0 ? ch / 100 : h.code === 'SOFFIT' ? 5.9 : h.lvl === 'L' ? 3.0 : 6.5);
     const ln = lineOf.get(h);
-    const line = !ln ? undefined : poz === 'D.12' ? `Brüt: ${ln}` : poz === 'D.13' ? ln.replace('mahal bulunamadı', 'mahal bulunamadı (cephe dışı saçak altı)') : ln;
+    const line = !ln ? undefined : poz === 'D.12' ? `Brüt: ${ln}` : ln;
     model3d.add({ layer: 'tavan', kind: 'flat', items: [poz], ...(line ? { lines: { [poz]: line } } : {}), label: `${h.code} – ${roomOf(h)} (CH ${ch > 0 ? ch : '?'}) – ${h.area.toFixed(2)} m²`, loops: h.g, z0: z, z1: z });
   }
   return { items, roomCeilings, findings };

@@ -12,6 +12,7 @@ import { decomposeRegion, mergeRows, type CalcRow } from '../lib/decompose';
 import type { P } from '../lib/geom';
 import type { Line, TakeoffItem } from './model';
 import { model3d } from './model3d';
+import { roomsAlong, roomsNear, sideOf } from './rooms-index';
 
 const ELEVS = [
   { key: 'SE', name: 'Güneydoğu', dwg: '4199-A-DD-01-04-100' },
@@ -21,6 +22,24 @@ const ELEVS = [
 ] as const;
 type Mat = { gross: number; net: number; src: string; rects: [number, number, number, number][]; hatches: P[][][] | null };
 const r2 = (v: number) => Math.round(v * 100) / 100;
+/** Görünüş ölçümündeki çalışma adları → projedeki adlandırma. */
+const MAT_TR: Record<string, string> = {
+  'FG-01 glass': 'FG-01 cam',
+  'FG-01? slot glazing (unlabelled)': 'taş arası dar cam (etiketsiz)',
+  'FS-01 stone': 'FS-01 doğal taş',
+  'FM-01 hall shell': 'FM-01 salon kabuğu',
+  'FM-04 rear shell (visible part)': 'FM-04 kabuk arka yüzü (görünen kısım)',
+  'shell misc (unlabelled)': 'kabuk – diğer parçalar (etiketsiz)',
+  'FM-01 eave top band': 'FM-01 saçak üst bandı',
+  'FM-02 eave fascia': 'FM-02 saçak alın bandı',
+  'FM-03 eave lower band': 'FM-03 saçak alt bandı',
+  'eave soffit strip (unlabelled)': 'saçak altı şerit (etiketsiz)',
+  'FM-05 service band': 'FM-05 servis bloğu üst bandı',
+  'FP-01 dark plaster (2f3031)': 'FP-01 koyu sıva',
+  'COLUMN (unlabelled)': 'kolon kaplaması (etiketsiz)',
+  'door frames/louvres/misc': 'kapı kasası / panjur / diğer',
+};
+const matTr = (m: string) => MAT_TR[m] ?? m;
 
 function elevationAreas(): Record<string, Record<string, Mat>> {
   // ayrı süreçte (bellek): scripts/takeoff/facade/elevations.ts → work/facade-areas.json
@@ -187,7 +206,9 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
   let wideNo = 0;
   chains.forEach((c, i) => {
     // 3B: ardışık dikmeler arası; dar bölmeler cam (+0,10 → +5,45), geniş bölmeler kapı (C.14)
-    const c1Line = `Cam hattı ${i + 1}: ${c.bays.filter((b) => b <= 2.0).length} bölme, başlangıç (${(c.pts[0].x / 1000).toFixed(1)}; ${(c.pts[0].y / 1000).toFixed(1)}) m`;
+    const along = roomsAlong(c.pts, 4000).map((r) => r.label);
+    const mid = c.pts[Math.floor(c.pts.length / 2)];
+    const c1Line = `Cam hattı ${i + 1} (${c.bays.filter((b) => b <= 2.0).length} bölme): ${along.length ? along.join(', ') + ' önü' : 'mahal bulunamadı'}${c.bays.length > 4 ? `, ${sideOf(mid)} kesimi` : ''}`;
     c.bays.forEach((b, k) => {
       const wide = b > 2.0;
       model3d.add({ layer: 'cephe', kind: 'ribbon', items: wide ? ['C.14'] : ['C.1'], lines: wide ? { 'C.14': wideNo++ } : { 'C.1': c1Line }, label: `${wide ? 'Cam cephe kapı bölmesi' : 'Cam bölmesi'} – hat ${i + 1}, ${b.toFixed(3)} m`, path: [c.pts[k], c.pts[k + 1]], z0: wide ? 0 : 0.1, z1: wide ? 3.0 : 5.45 });
@@ -205,7 +226,7 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
     doorL += wide.reduce((s, b) => s + Math.round(b * 1000) / 1000, 0);
     if (L > 0)
       glassLines.push({
-        label: `Cam hattı ${i + 1}: ${normal.length} bölme, başlangıç (${(c.pts[0].x / 1000).toFixed(1)}; ${(c.pts[0].y / 1000).toFixed(1)}) m`,
+        label: c1Line,
         value: r2(L * H),
         unit: 'm²',
         note: `bölme genişlikleri toplamı ${r2(L)} m × cam yüksekliği ${H} m${wide.length ? `; ${wide.length} geniş (kapı) bölme hariç: ${wide.map((b) => b.toFixed(2)).join(', ')} m` : ''}`,
@@ -232,12 +253,12 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
     method: 'Cam cephe dikme zincirinde 2,0 m\'den geniş bölmeler (giriş kapıları) toplandı. Kapı tipleri ve kanat sayıları için H grubu ve görünüşler.',
     sources: [{ drawing: '4199-A-DD-01-02-100', where: 'blok 4199_AMG_Glass new2 · dikme aralıkları > 2,0 m' }],
     confidence: 'Düşük',
-    lines: chains.flatMap((c, i) => c.bays.filter((b) => b > 2.0).map((b) => { const L = Math.round(b * 1000) / 1000; return { label: `Cam hattı ${i + 1} – geniş bölme`, value: r2(L), unit: 'm', calc: [{ kind: 'doğru' as const, unit: 'm', label: 'bölme', name: 'iki dikme arası mesafe', adet: 1, boy: L, sign: 1 as const, value: L }] }; })),
+    lines: chains.flatMap((c, i) => c.bays.map((b, k) => ({ b, k })).filter(({ b }) => b > 2.0).map(({ b, k }) => { const L = Math.round(b * 1000) / 1000; const mid = { x: (c.pts[k].x + c.pts[k + 1].x) / 2, y: (c.pts[k].y + c.pts[k + 1].y) / 2 }; const r = roomsNear(mid, 4000)[0]; return { label: `${r ? r.label + ' girişi' : 'Giriş'} – cam hattı ${i + 1}`, note: `dikme arası ${L.toFixed(3)} m`, value: r2(L), unit: 'm', calc: [{ kind: 'doğru' as const, unit: 'm', label: 'bölme', name: 'iki dikme arası mesafe', adet: 1, boy: L, sign: 1 as const, value: L }] }; })),
   });
 
   // --- Görünüş alanından gelen kalemler
   const fromElev = (poz: string, code: string | null, name: string, mats: string[], conf: 'Yüksek' | 'Orta' | 'Düşük', notes: string[] = []) => {
-    const lines = mats.flatMap((m) => elevLines(m).map((l) => ({ ...l, label: mats.length > 1 ? `${l.label} – ${m}` : l.label })));
+    const lines = mats.flatMap((m) => elevLines(m).map((l) => ({ ...l, label: mats.length > 1 ? `${l.label} – ${matTr(m)}` : l.label })));
     items.push({ poz, group: 'C', code, name, unit: 'm²', value: sum(lines), method: UNION, sources: elevSources, confidence: conf, lines, notes });
   };
   fromElev('C.2', 'FM-01', 'Alüminyum panel – salon kabukları (görünen)', ['FM-01 hall shell'], 'Yüksek');

@@ -6,6 +6,7 @@ import { area, bbox, length, pointInPolygon, type P } from '../lib/geom';
 import { decomposeLength, decomposeRegion, gridRects, mergeRows, type CalcRow } from '../lib/decompose';
 import type { Line, TakeoffItem } from './model';
 import { model3d } from './model3d';
+import { roomAt, roomsNear } from './rooms-index';
 const exA = (l: P[]) => decomposeRegion([l]).reduce((t, r) => t + r.value, 0) * 1e6; // mm², cetvel toplamı
 const csum = (rows: CalcRow[]) => rows.reduce((t, r) => t + r.value, 0);
 /** Satırlardan ara toplam cetveli (her satır bir 'kalem' satırı). */
@@ -115,10 +116,16 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
   const bigCircle = must(circles[0], 'büyük dairesel boşluk');
   const smallCircle = must(circles[1], 'küçük dairesel boşluk');
   const courtyard = must(holes.find((h) => h !== hallBlock && h.length < 300), 'avlu (yamuk) boşluğu');
+  /** Boşluğun yanındaki zemin kat mahali (planda boşlukların adı yok). */
+  const besideRoom = (l: P[]) => {
+    const b = bbox(l);
+    const r = roomsNear({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 }, Math.max(b.maxX - b.minX, b.maxY - b.minY))[0];
+    return r ? ` – ${r.label} yanında` : '';
+  };
   const voids = [
-    { label: 'Büyük dairesel boşluk (Ø≈13,6 m, iç ±0,00)', loop: bigCircle },
-    { label: 'Küçük dairesel boşluk (Ø≈6,6 m, iç ±0,00)', loop: smallCircle },
-    { label: 'Yamuk avlu (ağaçlı, iç ±0,00)', loop: courtyard },
+    { label: `Büyük dairesel boşluk (Ø≈13,6 m, iç ±0,00)${besideRoom(bigCircle)}`, loop: bigCircle },
+    { label: `Küçük dairesel boşluk (Ø≈6,6 m, iç ±0,00)${besideRoom(smallCircle)}`, loop: smallCircle },
+    { label: `Yamuk avlu (ağaçlı, iç ±0,00)${besideRoom(courtyard)}`, loop: courtyard },
   ];
   const netGravel = exA(outer) - sum(holes.map(exA));
   const inTerrace = (p: P) => pointInPolygon(p, outer) && !holes.some((h) => pointInPolygon(p, h));
@@ -129,10 +136,22 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
   const halls = outers.map((o, i) => {
     const inner = must(rects.find((r) => r !== o && pointInPolygon(r.pts![0], o.pts!)), `salon iç parapet ${i}`);
     const b = bbox(o.pts!);
-    return { name: ['Batı salon', 'Orta salon', 'Doğu salon'][i] ?? `Salon ${i + 1}`, outer: o.pts!, inner: inner.pts!, b };
+    // projedeki mahal adı: parapet içinin ortasındaki zemin kat mahali (GF-03 SALON 01 …)
+    const ib = bbox(inner.pts!);
+    const room = roomAt({ x: (ib.minX + ib.maxX) / 2, y: (ib.minY + ib.maxY) / 2 });
+    return { name: room?.label ?? ['Batı salon', 'Orta salon', 'Doğu salon'][i] ?? `Salon ${i + 1}`, code: room?.code ?? `S${i + 1}`, outer: o.pts!, inner: inner.pts!, b };
   });
   if (halls.length !== 3) throw new Error(`roof-items: 3 salon bekleniyordu, ${halls.length} bulundu`);
   const hallOf = (p: P) => halls.find((h) => pointInPolygon(p, h.outer));
+  /** Uzay kafes parçasının adı: üstünde olduğu salon ya da iki salon arasındaki derz. */
+  const ukName = (pts: P[]) => {
+    const b = bbox(pts);
+    const c = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
+    if (M(b.maxX - b.minX) >= 3) return `${hallOf(c)?.name ?? 'salon'} üstü`;
+    const left = halls.filter((h) => h.b.maxX <= c.x + 500).sort((p, q) => q.b.maxX - p.b.maxX)[0];
+    const right = halls.filter((h) => h.b.minX >= c.x - 500).sort((p, q) => p.b.minX - q.b.minX)[0];
+    return `${left?.code ?? '?'} – ${right?.code ?? '?'} arası derz şeridi`;
+  };
 
   // ---------------------------------------------------------------- B.1 uzay kafes
   const uk = inBlk('UZAY KAFES').filter((f) => f.closed && f.pts).sort((a, b) => bbox(a.pts!).minX - bbox(b.pts!).minX);
@@ -153,7 +172,7 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
         const b = bbox(f.pts!);
         const w = M(b.maxX - b.minX);
         const strip = w < 3;
-        return { label: strip ? `Derz şeridi ${++si}` : `${['Batı', 'Orta', 'Doğu'][hi++] ?? ''} salon paneli`, value: r2(M2(area(f.pts!))), unit: 'm²', note: `${fmt(w)} × ${fmt(M(b.maxY - b.minY))} m`, calc: mergeRows(decomposeRegion([f.pts!])) };
+        return { label: ukName(f.pts!), value: r2(M2(area(f.pts!))), unit: 'm²', note: `${fmt(w)} × ${fmt(M(b.maxY - b.minY))} m`, calc: mergeRows(decomposeRegion([f.pts!])) };
       }),
       { label: 'Birleşim dikdörtgeni (kontrol)', value: r2(M2(ukUnion)), unit: 'm²', note: 'toplamla aynı → örtüşme yok', calc: decomposeRegion([rc(ukB)]) },
     ],
@@ -220,8 +239,13 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
   const neB = bbox(neHatch.loops![0]);
   const neOuter = must(site.find((f) => f.closed && f.pts && f.pts.length === 4 && f.layer === 'A_Elev_1' && (() => { const b = bbox(f.pts!); return b.minX <= neB.minX + 1 && b.maxX >= neB.maxX - 1 && b.minY <= neB.minY + 1 && b.maxY >= neB.maxY - 1 && M2(area(f.pts!)) < 100; })()), 'KD alçak çatı dış dikdörtgeni');
   const neOB = bbox(neOuter.pts!);
+  const under = (b: ReturnType<typeof bbox>) => {
+    const c = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
+    return roomAt(c) ?? roomsNear(c, 8000)[0] ?? null; // altında mahal yoksa en yakın mahal
+  };
+  const neName = under(neB)?.label ?? 'kuzeydoğu';
   items.push({
-    poz: 'B.4', group: 'B', name: 'Alçak çatı +3,70 kuzeydoğu (çakıllı)', unit: 'm²', value: r2(M2(area(neHatch.loops![0]))),
+    poz: 'B.4', group: 'B', name: `Alçak çatı +3,70 – ${neName} üstü (çakıllı)`, unit: 'm²', value: r2(M2(area(neHatch.loops![0]))),
     method:
       'Kuzeydoğu köşedeki küçük alçak çatı, "+3.70 SSL / +25.40" kotlu. Alan, SITEPLAN_L bloğundaki tek halkalı AR-SAND taramasından (parapet iç yüzü) alındı; dış dikdörtgen bilgi satırı olarak verildi. Bir Wavin süzgeci var (bkz. B.11).',
     sources: [{ drawing: ROOF, where: 'blok SITEPLAN_L · katman A_Patt_Othr · HATCH AR-SAND (1 halka) + katman A_Elev_1 kapalı dikdörtgen' }],
@@ -236,8 +260,9 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
   const nwBoxes = nwPl.map((f) => bbox(f.pts!)).sort((a, b) => (b.maxX - b.minX) * (b.maxY - b.minY) - (a.maxX - a.minX) * (a.maxY - a.minY));
   const rectA = (b: ReturnType<typeof bbox>) => (b.maxX - b.minX) * (b.maxY - b.minY);
   const [nwO, nwI] = nwBoxes;
+  const nwName = under(nwI)?.label ?? 'kuzeybatı';
   items.push({
-    poz: 'B.5', group: 'B', name: 'Alçak çatı/teras +3,70 kuzeybatı (kaplama belirsiz)', unit: 'm²', value: r2(M2(rectA(nwI))),
+    poz: 'B.5', group: 'B', name: `Alçak çatı/teras +3,70 – ${nwName} üstü (kaplama belirsiz)`, unit: 'm²', value: r2(M2(rectA(nwI))),
     method:
       'Kuzey cephede, batı salonunun kuzeyindeki dikdörtgen alan "+3.70 SSL / +25.40" kotlu. Çakıl taraması yok. Planda eğim okları ve bir Wavin süzgeci var, dolayısıyla açık bir çatı yüzeyi. Alan, parapet iç yüzünü gösteren dikdörtgenden (A_Elev_1, köşe noktaları) alındı; dış yüz bilgi satırında. Asma kat planında (01-02-200) bu alan çarpı işaretli ve batı kenarında iki kapı var; MF-01 sınırının dışında. Gezilebilir açık teras gibi görünüyor, ancak kaplama türü belirtilmemiş.',
     sources: [
@@ -329,14 +354,14 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
     ];
   };
   const named = (rows: CalcRow[], name: string) => rows.map((r) => ({ ...r, name }));
-  const intCalc = [...box(neOB, 'KD'), ...neg(named(neBoxCalc, 'KD dış kenar (yukarıdaki satırda)')), ...box(nwO, 'KB'), ...neg(named(nwBoxCalc, 'KB dış kenar (yukarıdaki satırda)'))];
+  const intCalc = [...box(neOB, neName), ...neg(named(neBoxCalc, `${neName} üstü dış kenar (yukarıdaki satırda)`)), ...box(nwO, nwName), ...neg(named(nwBoxCalc, `${nwName} üstü dış kenar (yukarıdaki satırda)`))];
   const parLines: Line[] = [
     { label: 'Güney eğrisel parapet (dış yüz)', value: r2(csum(southCalc)), unit: 'm', note: 'SITEPLAN_L / A_Elev_1 yay + kırıklar; iç yüz ≈202,20 m', calc: southCalc },
     { label: 'Batı (yıldız) cephe parapeti (dış yüz)', value: r2(csum(westCalc)), unit: 'm', note: 'cephe dış yüz çizgisinden', calc: westCalc },
     { label: 'Kuzey cephe parapeti, MF-01 üstü (dış yüz)', value: r2(csum(northCalc)), unit: 'm', calc: northCalc },
     { label: 'Doğu kademeli cephe parapeti (dış yüz)', value: r2(csum(eastCalc)), unit: 'm', note: 'parapet bandı 0,40 m; bant çevresi 99,18 m iki yüzü birden içerir', calc: eastCalc },
-    { label: '+3,70 alçak çatıların dış kenarları (KD + KB)', value: r2(csum(neBoxCalc) + csum(nwBoxCalc)), unit: 'm', note: `KD ${fmt(csum(neBoxCalc))} + KB ${fmt(csum(nwBoxCalc))}`, calc: [...named(neBoxCalc, 'KD'), ...named(nwBoxCalc, 'KB')] },
-    { label: '+7,10 → +3,70 iç kademe duvarları', value: r2(csum(intCalc)), unit: 'm', note: 'kutu çevresi − dış kenarı; terasın alçak çatıya bakan kenarı', calc: intCalc },
+    { label: '+3,70 alçak çatıların dış kenarları', value: r2(csum(neBoxCalc) + csum(nwBoxCalc)), unit: 'm', note: `${neName} üstü ${fmt(csum(neBoxCalc))} + ${nwName} üstü ${fmt(csum(nwBoxCalc))}`, calc: [...named(neBoxCalc, `${neName} üstü`), ...named(nwBoxCalc, `${nwName} üstü`)] },
+    { label: '+7,10 → +3,70 iç kademe duvarları', value: r2(csum(intCalc)), unit: 'm', note: `kutu çevresi − dış kenarı; terasın ${neName} ve ${nwName} üstündeki alçak çatılara bakan kenarı`, calc: intCalc },
     { label: 'Boşluk çevre duvarları (2 daire + avlu, dış yüz)', value: r2(csum(voidCalc)), unit: 'm', note: voids.map((v) => v.label).join(' + '), calc: voidCalc },
   ];
   items.push({
@@ -399,7 +424,7 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
     confidence: 'Yüksek',
     lines: [
       { label: '+7,10 çakıllı teras', value: onTerrace.length, unit: 'adet' },
-      { label: '+3,70 alçak çatılar', value: lowRoof.length, unit: 'adet', note: lowRoof.map((o) => `${inBox(o.at!, neOB) ? 'KD' : inBox(o.at!, nwO) ? 'KB' : '?'} ${xy(o.at!)}`).join(', ') },
+      { label: '+3,70 alçak çatılar', value: lowRoof.length, unit: 'adet', note: lowRoof.map((o) => `${inBox(o.at!, neOB) ? neName : inBox(o.at!, nwO) ? nwName : '?'} üstü ${xy(o.at!)}`).join(', ') },
     ],
   });
   const hallDrains = drain.filter((f) => f.t === 'INSERT' && f.path.length === 1 && f.name === 'A$C74180FAC');
@@ -496,8 +521,8 @@ Ayrıca 4 adet "kare_kesitli_gider" çizim dışında, (412–465; 0) civarında
   const roofZ = (h: (typeof halls)[number]) => (h === bigHall ? 16.72 : 14.93);
   const paZ = (h: (typeof halls)[number]) => (h === bigHall ? 17.87 : 16.06);
   model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.3'], lines: { 'B.3': 'Dış halka (parapet iç yüzü)' }, label: 'Çakıllı teras çatı +7,10', loops: [outer, ...holes], z0: 7.1, z1: 7.1 });
-  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.4'], lines: { 'B.4': 'Çakıllı alan (tarama, parapet içi)' }, label: 'Alçak çatı +3,70 (KD)', loops: neHatch.loops!, z0: 3.7, z1: 3.7 });
-  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.5'], lines: { 'B.5': 'Parapet içi alan' }, label: 'Alçak çatı/teras +3,70 (KB)', loops: [rc(nwI)], z0: 3.7, z1: 3.7 });
+  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.4'], lines: { 'B.4': 'Çakıllı alan (tarama, parapet içi)' }, label: `Alçak çatı +3,70 – ${neName} üstü`, loops: neHatch.loops!, z0: 3.7, z1: 3.7 });
+  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.5'], lines: { 'B.5': 'Parapet içi alan' }, label: `Alçak çatı/teras +3,70 – ${nwName} üstü`, loops: [rc(nwI)], z0: 3.7, z1: 3.7 });
   model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.6'], lines: { 'B.6': 'Saçak çokgeni (serbest kenar ↔ parapet dış yüzü)' }, label: 'Saçak (kanopi) üstü +7,60', loops: [canopyPoly], z0: 7.6, z1: 7.6 });
   for (const e of canopyEdge) model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['B.7'], lines: { 'B.7': e.label }, label: `Saçak serbest kenarı – ${e.label} (+6,00 → +7,60)`, path: e.pts, z0: 6.0, z1: 7.6 });
   for (const h of halls) {
@@ -509,7 +534,7 @@ Ayrıca 4 adet "kare_kesitli_gider" çizim dışında, (412–465; 0) civarında
   let us = 0;
   for (const f of uk) {
     const ub = bbox(f.pts!);
-    const ul = M(ub.maxX - ub.minX) < 3 ? `Derz şeridi ${++us}` : `${['Batı', 'Orta', 'Doğu'][uh++] ?? ''} salon paneli`;
+    const ul = ukName(f.pts!);
     model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.1'], lines: { 'B.1': ul }, label: `Uzay kafes izdüşümü – ${ul}`, loops: [f.pts!], z0: 13.5, z1: 13.5 });
   }
   const parPaths: [string, P[], boolean, string][] = [

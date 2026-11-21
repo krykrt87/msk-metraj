@@ -6,6 +6,7 @@ import { flatten } from '../lib/flatten';
 import { makeMeasurer } from '../lib/regions';
 import { gfItems } from './gf-items';
 import { model3d } from './model3d';
+import { setRooms } from './rooms-index';
 import { bbox } from '../lib/geom';
 import type { CalcRow } from '../lib/decompose';
 import type { Takeoff, TakeoffItem } from './model';
@@ -33,6 +34,8 @@ async function main() {
   const measure = makeMeasurer(gfFlat);
   const gf = buildGfRooms(gfFlat, measure);
   if (!gf.plate) throw new Error('Kat genel sınırı bulunamadı');
+  // satır açıklamalarında projedeki mahal adları için (zemin kat mahalleri, aynı çizim çerçevesi)
+  setRooms(gf.rows.filter((r) => r.floor === 'Zemin Kat' && gf.shapes.has(r.id)).map((r) => ({ code: r.code, name: r.name, pts: gf.shapes.get(r.id)! })));
   const items: TakeoffItem[] = [...gfItems(gfDxf, gfFlat, gf.rows, gf.plate)];
   const findings: Takeoff['findings'] = gf.notes.map((n) => ({ topic: 'Mahal alanı', drawings: '4199-A-DD-01-02-100', finding: n, suggestion: 'Mahal sınırını/etiketini düzeltin.' }));
 
