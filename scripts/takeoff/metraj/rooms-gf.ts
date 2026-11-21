@@ -59,10 +59,10 @@ export function buildGfRooms(flat: Flat[], measureAt: (seed: P, half?: number, r
       measured = m.leaked ? null : m.area;
       const measuredCalc = m.outline.length ? decomposeArea(m.outline.map((q) => ({ ...q, bulge: 0 }))) : undefined;
       if (l.labelArea !== null && measured !== null && Math.abs(measured - l.labelArea) / measured > 0.25) {
-        areaV = measured;
         src = 'ölçüm';
         calc = measuredCalc;
-        note = `Mahal sınırı çizilmemiş. Etiketteki ${l.labelArea.toFixed(2)} m² ölçümle çelişiyor (kopyalama hatası); duvar iç yüzlerinden ölçülen ${measured.toFixed(2)} m² alındı.`;
+        areaV = calc ? calc.reduce((t, x) => t + x.value, 0) : measured; // cetvelle aynı: ölçüm konturu
+        note = `Mahal sınırı çizilmemiş. Etiketteki ${l.labelArea.toFixed(2)} m² ölçümle çelişiyor (kopyalama hatası); duvar iç yüzlerinden çıkarılan kontur ${areaV.toFixed(2)} m² alındı (ızgara doldurma sayımı ${measured.toFixed(2)} m²).`;
         notes.push(`${code} ${l.name}: ${note}`);
       } else if (l.labelArea !== null) {
         areaV = l.labelArea;

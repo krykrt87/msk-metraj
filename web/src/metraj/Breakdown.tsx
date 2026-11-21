@@ -1,26 +1,29 @@
 import { Fragment } from 'react';
 import { formatTr } from '@shared/number';
+import { partName, partRule, unitOf } from '@shared/calc';
 import type { CalcRow, Item } from '@shared/types';
+
+export { partName };
 
 const n3 = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 const f3 = (v: number | undefined) => (v === undefined || v === null ? '' : n3.format(v));
-
-export function partName(r: CalcRow): string {
-  if (r.kind === 'dikdörtgen') return 'Dikdörtgen';
-  if (r.kind === 'yamuk') return r.a === 0 || r.b === 0 ? 'Üçgen' : 'Yamuk';
-  return 'Daire parçası';
-}
-const partRule = (r: CalcRow) =>
-  r.kind === 'dikdörtgen' ? 'en × boy' : r.kind === 'yamuk' ? (r.a === 0 || r.b === 0 ? 'taban × yükseklik / 2' : '(a + b) / 2 × boy') : 'r²/2 × (θ − sin θ)';
+type Col = { key: string; head: string; cell: (r: CalcRow) => string };
+const COLS: Col[] = [
+  { key: 'en', head: 'En / kalınlık (m)', cell: (r) => (r.kind === 'daire parçası' || r.kind === 'yay' ? '' : f3(r.en)) },
+  { key: 'boy', head: 'Boy / uzunluk (m)', cell: (r) => f3(r.boy) },
+  { key: 'a', head: 'Kenar a (m)', cell: (r) => (r.kind === 'yamuk' ? f3(r.a) : '') },
+  { key: 'b', head: 'Kenar b (m)', cell: (r) => (r.kind === 'yamuk' ? f3(r.b) : '') },
+  { key: 'r', head: 'r (m)', cell: (r) => f3(r.r) },
+  { key: 'angle', head: 'Açı (°)', cell: (r) => f3(r.angle) },
+];
 
 /** Excel cetveli gibi: her değer kendi sütununda; parça satırları her satırın altında. */
 export function Breakdown({ item }: { item: Item }) {
   const lines = item.breakdown ?? [];
   const parts = lines.flatMap((l) => l.calc ?? []);
   const hasParts = parts.length > 0;
-  const hasTrap = parts.some((r) => r.kind === 'yamuk');
-  const hasArc = parts.some((r) => r.kind === 'daire parçası');
-  const cols = 4 + (hasParts ? 3 : 0) + (hasTrap ? 2 : 0) + (hasArc ? 2 : 0);
+  const cols = COLS.filter((c) => parts.some((r) => c.cell(r) !== ''));
+  const nCols = 4 + (hasParts ? 1 + cols.length : 0);
 
   return (
     <div className="breakdown">
@@ -43,12 +46,11 @@ export function Breakdown({ item }: { item: Item }) {
               <tr>
                 <th>Açıklama</th>
                 {hasParts && <th className="num">Adet</th>}
-                {hasParts && <th className="num">En (m)</th>}
-                {hasParts && <th className="num">Boy (m)</th>}
-                {hasTrap && <th className="num">Kenar a (m)</th>}
-                {hasTrap && <th className="num">Kenar b (m)</th>}
-                {hasArc && <th className="num">r (m)</th>}
-                {hasArc && <th className="num">Açı (°)</th>}
+                {cols.map((c) => (
+                  <th key={c.key} className="num">
+                    {c.head}
+                  </th>
+                ))}
                 <th className="num">Miktar</th>
                 <th>Birim</th>
                 <th>Hesap / not</th>
@@ -60,12 +62,9 @@ export function Breakdown({ item }: { item: Item }) {
                   <tr className={l.calc?.length ? 'line has-parts' : 'line'}>
                     <td>{l.label}</td>
                     {hasParts && <td />}
-                    {hasParts && <td />}
-                    {hasParts && <td />}
-                    {hasTrap && <td />}
-                    {hasTrap && <td />}
-                    {hasArc && <td />}
-                    {hasArc && <td />}
+                    {cols.map((c) => (
+                      <td key={c.key} />
+                    ))}
                     <td className="num">{formatTr(l.value, l.unit)}</td>
                     <td>{l.unit}</td>
                     <td className="note">{l.note ?? ''}</td>
@@ -77,21 +76,20 @@ export function Breakdown({ item }: { item: Item }) {
                         {partName(r)}
                       </td>
                       <td className="num">{r.adet}</td>
-                      <td className="num">{r.kind === 'daire parçası' ? '' : f3(r.en)}</td>
-                      <td className="num">{f3(r.boy)}</td>
-                      {hasTrap && <td className="num">{r.kind === 'yamuk' ? f3(r.a) : ''}</td>}
-                      {hasTrap && <td className="num">{r.kind === 'yamuk' ? f3(r.b) : ''}</td>}
-                      {hasArc && <td className="num">{f3(r.r)}</td>}
-                      {hasArc && <td className="num">{f3(r.angle)}</td>}
+                      {cols.map((c) => (
+                        <td key={c.key} className="num">
+                          {c.cell(r)}
+                        </td>
+                      ))}
                       <td className="num">{formatTr(r.value)}</td>
-                      <td>m²</td>
+                      <td>{unitOf(r)}</td>
                       <td className="note">{partRule(r)}</td>
                     </tr>
                   ))}
                 </Fragment>
               ))}
               <tr className="total">
-                <td colSpan={cols - 3}>Toplam</td>
+                <td colSpan={nCols - 3}>Toplam</td>
                 <td className="num">{formatTr(item.value, item.unit)}</td>
                 <td>{item.unit}</td>
                 <td />

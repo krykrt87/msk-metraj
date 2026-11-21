@@ -1,5 +1,6 @@
 // Metraj sonucunu okunabilir Excel'e yazar: her kalemin nereden ve nasıl hesaplandığı ayrı sayfalarda.
 import ExcelJS from 'exceljs';
+import { partName, partRule, unitOf } from '../../../shared/calc';
 import type { Takeoff } from './model';
 
 const NUM = '#,##0.00';
@@ -61,8 +62,8 @@ export async function writeReport(t: Takeoff, file: string): Promise<void> {
     { header: 'Kalem', key: 'item', width: 36 },
     { header: 'Satır / parça', key: 'label', width: 44 },
     { header: 'Adet', key: 'adet', width: 6 },
-    { header: 'En (m)', key: 'en', width: 10 },
-    { header: 'Boy (m)', key: 'boy', width: 10 },
+    { header: 'En / kalınlık (m)', key: 'en', width: 10 },
+    { header: 'Boy / uzunluk (m)', key: 'boy', width: 10 },
     { header: 'Kenar a (m)', key: 'ka', width: 10 },
     { header: 'Kenar b (m)', key: 'kb', width: 10 },
     { header: 'r (m)', key: 'r', width: 9 },
@@ -78,9 +79,9 @@ export async function writeReport(t: Takeoff, file: string): Promise<void> {
       r.getCell('value').numFmt = l.unit === 'adet' ? '#,##0' : NUM;
       if (l.calc?.length) r.font = { bold: true };
       for (const c of l.calc ?? []) {
-        const kind = c.kind === 'dikdörtgen' ? 'Dikdörtgen' : c.kind === 'yamuk' ? (c.a === 0 || c.b === 0 ? 'Üçgen' : 'Yamuk') : 'Daire parçası';
-        const rule = c.kind === 'dikdörtgen' ? 'en × boy' : c.kind === 'yamuk' ? (c.a === 0 || c.b === 0 ? 'taban × yükseklik / 2' : '(a + b) / 2 × boy') : 'r²/2 × (θ − sin θ)';
-        const cr = d.addRow({ poz: '', item: '', label: `    ${c.sign < 0 ? '(−) ' : ''}${kind}`, adet: c.adet, en: c.kind === 'daire parçası' ? null : (c.en ?? null), boy: c.boy ?? null, ka: c.kind === 'yamuk' ? c.a : null, kb: c.kind === 'yamuk' ? c.b : null, r: c.r ?? null, aci: c.angle !== undefined ? Math.round(c.angle * 100) / 100 : null, value: c.value, unit: 'm²', note: rule });
+        const kind = partName(c);
+        const rule = partRule(c);
+        const cr = d.addRow({ poz: '', item: '', label: `    ${c.sign < 0 ? '(−) ' : ''}${kind}`, adet: c.adet, en: c.kind === 'daire parçası' || c.kind === 'yay' ? null : (c.en ?? null), boy: c.boy ?? null, ka: c.kind === 'yamuk' ? c.a : null, kb: c.kind === 'yamuk' ? c.b : null, r: c.r ?? null, aci: c.angle !== undefined ? Math.round(c.angle * 100) / 100 : null, value: c.value, unit: unitOf(c), note: rule });
         cr.getCell('value').numFmt = NUM;
         cr.getCell('en').numFmt = '0.000';
         cr.getCell('boy').numFmt = '0.000';

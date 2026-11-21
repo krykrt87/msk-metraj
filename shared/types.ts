@@ -52,9 +52,14 @@ export interface Item {
   notes?: string[];
 }
 
-/** Metraj cetveli satırı: adet × en × boy (yamukta ortalama en; daire parçasında r ve açı). */
+/**
+ * Metraj cetveli satırı: adet × en × boy (yamukta ortalama en; daire parçasında r ve açı).
+ * Uzunluk satırları: 'doğru' (boy), 'yay' (r × θ). 'duvar': en = kalınlık, boy = uzunluk.
+ * value adet dahil, işaretli toplamdır; unit yoksa m².
+ */
 export interface CalcRow {
-  kind: 'dikdörtgen' | 'yamuk' | 'daire parçası';
+  kind: 'dikdörtgen' | 'yamuk' | 'daire parçası' | 'doğru' | 'yay' | 'duvar';
+  unit?: string;
   label: string;
   adet: number;
   en?: number;

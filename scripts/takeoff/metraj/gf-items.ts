@@ -3,7 +3,7 @@ import { extractDoors } from '../doors';
 import type { RawDxf } from '../lib/dxf';
 import type { Flat } from '../lib/flatten';
 import { area, bbox, length, pointInPolygon, regionArea, type P } from '../lib/geom';
-import { decomposeArea } from '../lib/decompose';
+import { decomposeArea, mergeRows, type CalcRow } from '../lib/decompose';
 import type { RoomRow, TakeoffItem } from './model';
 
 const GF = '4199-A-DD-01-02-100';
@@ -61,7 +61,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
 
   // --- Duvarlar (A_Patt_Wall taramaları)
   const walls = flat.filter((f) => top(f) === '4199_AMH_Walls_GF' && f.layer === 'A_Patt_Wall' && f.t === 'HATCH' && f.loops);
-  const cls = new Map<number, { n: number; L: number; A: number; ext: number }>();
+  const cls = new Map<number, { n: number; L: number; A: number; ext: number; pcs: { t: number; L: number }[] }>();
   for (const h of walls) {
     const A = regionArea(h.loops!);
     const Pm = h.loops!.reduce((s, l) => s + length(l, true), 0);
@@ -72,18 +72,33 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     const b = bbox(h.loops![0]);
     const c = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
     const ext = plate.pts.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < Math.max(1000, L / 2));
-    const k = cls.get(tc) ?? { n: 0, L: 0, A: 0, ext: 0 };
+    const k = cls.get(tc) ?? { n: 0, L: 0, A: 0, ext: 0, pcs: [] };
+    k.pcs.push({ t, L });
     k.n++;
     k.L += L;
     k.A += A;
     if (ext) k.ext += L;
     cls.set(tc, k);
   }
+  const mm3 = (x: number) => Math.round(x) / 1000;
+  const wallCalc = (k: { pcs: { t: number; L: number }[] }, unit: 'm' | 'm²'): CalcRow[] =>
+    mergeRows(
+      k.pcs
+        .slice()
+        .sort((a, b) => b.L - a.L)
+        .map((p) => {
+          const en = mm3(p.t);
+          const boy = mm3(p.L);
+          return { kind: 'duvar' as const, unit, label: 'Duvar parçası', adet: 1, en, boy, sign: 1 as const, value: unit === 'm' ? boy : en * boy };
+        }),
+    );
   const wallLines = [...cls.entries()].sort((a, b) => a[0] - b[0]).map(([tc, k]) => ({
     label: `~${tc / 10} cm kalınlık (${k.n} parça)`,
     value: r2(k.L / 1000),
     unit: 'm',
     note: `taban izi ${r2(k.A / 1e6)} m²; dış kontura yakın ${r2(k.ext / 1000)} m`,
+    calc: wallCalc(k, 'm'),
+    calcA: wallCalc(k, 'm²'),
   }));
   const wallL = [...cls.values()].reduce((s, k) => s + k.L, 0) / 1000;
   const wallA = [...cls.values()].reduce((s, k) => s + k.A, 0) / 1e6;
@@ -93,7 +108,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
       'Duvar taraması (katman A_Patt_Wall, ANSI31) her duvar parçası için ayrı bölge. Her bölgenin alanı A ve çevresi P ölçüldü; dikdörtgene eşdeğer kalınlık t = (P/2 − √((P/2)² − 4A)) / 2, uzunluk L = A / t. Kalınlık 5 cm sınıflarına yuvarlandı. Duvar malzemesi paftada belirtilmemiş.',
     sources: [{ drawing: GF, where: 'blok 4199_AMH_Walls_GF · katman A_Patt_Wall (183 tarama)' }],
     confidence: 'Orta',
-    lines: wallLines,
+    lines: wallLines.map(({ calcA: _a, ...l }) => l),
     notes: ['Duvar yüzey alanı için duvar yükseklikleri kesitlerden alınmalı (bkz. G.3).'],
   });
   items.push({
@@ -101,7 +116,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     method: 'Duvar taramalarının (A_Patt_Wall) toplam alanı.',
     sources: [{ drawing: GF, where: 'blok 4199_AMH_Walls_GF · katman A_Patt_Wall' }],
     confidence: 'Yüksek',
-    lines: wallLines.map((l) => ({ ...l, value: r2(Number(l.note.split(' ')[2])), unit: 'm²', note: `uzunluk ${l.value} m` })),
+    lines: wallLines.map(({ calcA, ...l }) => ({ ...l, value: r2(Number(l.note.split(' ')[2])), unit: 'm²', note: `uzunluk ${l.value} m`, calc: calcA })),
   });
 
   // --- Hareketli bölme (movatech bloğu)

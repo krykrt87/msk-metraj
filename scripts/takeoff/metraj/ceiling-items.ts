@@ -7,6 +7,7 @@
 import { readDxf, type RawDxf, type RawEnt } from '../lib/dxf';
 import { flatten, type Flat } from '../lib/flatten';
 import { area, bbox, pointInPolygon, regionArea, type P } from '../lib/geom';
+import { decomposeRegion, mergeRows, type CalcRow } from '../lib/decompose';
 import { extractRooms, type RoomLabel, type RoomPoly } from '../rooms';
 import type { Line, Source, TakeoffItem } from './model';
 
@@ -31,7 +32,8 @@ interface CH {
   f: Flat;
   loops: P[][]; // kendi çerçevesinde
   g: P[][]; // zemin kat çerçevesinde (üst için −DX)
-  area: number; // m²
+  area: number; // m² (cetvel toplamı: yaylar tam, ölçüler mm)
+  calc: CalcRow[];
   col: string;
   scale: string;
   mf: RoomLabel | null; // asma kat mahalinin tavanı ise
@@ -169,7 +171,8 @@ export function ceilingItems(
       junk.area += regionArea(f.loops) / 1e6;
       continue;
     }
-    hs.push({ idx: hi - 1, code, lvl, f, loops: f.loops, g: lvl === 'U' ? shift(f.loops, -DX) : f.loops, area: regionArea(f.loops) / 1e6, col: pr.col, scale: pr.scale, mf: null });
+    const calc = mergeRows(decomposeRegion(f.loops));
+    hs.push({ idx: hi - 1, code, lvl, f, loops: f.loops, g: lvl === 'U' ? shift(f.loops, -DX) : f.loops, area: calc.reduce((t, r) => t + r.value, 0), calc, col: pr.col, scale: pr.scale, mf: null });
   }
   const lowerH = hs.filter((h) => h.lvl === 'L');
   const upperH = hs.filter((h) => h.lvl === 'U');
@@ -245,7 +248,7 @@ export function ceilingItems(
     `desen ${h.f.pattern} · katman ${h.f.layer} · renk ${h.col === 'BL' ? 'BYLAYER' : h.col} · ölçek ${Number(h.scale).toFixed(1)} · tarama #${h.idx}${h.loops.length > 1 ? ` · ${h.loops.length} halka (boşluklar düşülü)` : ''}`;
   const hatchLine = (h: CH, chOverride?: string): Line => {
     const ch = chOverride ?? hatchCH(h).join(' / ');
-    return { label: `${roomOf(h)} (${planName(h)}${ch ? `, CH ${ch}` : ''})`, value: r2(h.area), unit: 'm²', note: noteOf(h) };
+    return { label: `${roomOf(h)} (${planName(h)}${ch ? `, CH ${ch}` : ''})`, value: r2(h.area), unit: 'm²', note: noteOf(h), calc: h.calc };
   };
   const srcOf = (list: CH[]): Source[] => {
     const seen = new Map<string, Source>();
@@ -380,6 +383,7 @@ export function ceilingItems(
     label: `${g.l ? lname(g.l) : 'mahal bulunamadı'} (üst tavan planı${hallCH.get(k) ? `, CH ${hallCH.get(k)}` : ''})`,
     value: r2(sum(g.hs)),
     unit: 'm²',
+    calc: mergeRows(g.hs.flatMap((h) => h.calc)),
     note: `${g.mods.size} modül × 2 panel (190_TAVAN MODÜL, 1,88×1,88 m) · desen AR-RROOF · katman CA2O_12_elev1 · ${g.hs.length} panel taraması`,
   }));
   const nMods = new Set(w03.map((h) => h.f.inst ?? -h.idx)).size;

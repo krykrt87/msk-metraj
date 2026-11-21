@@ -18,7 +18,7 @@ const item = {
 describe('Breakdown (cetvel)', () => {
   it('her değer ayrı sütunda', () => {
     render(<Breakdown item={item} />);
-    for (const h of ['Açıklama', 'Adet', 'En (m)', 'Boy (m)', 'Kenar a (m)', 'Kenar b (m)', 'r (m)', 'Açı (°)', 'Miktar', 'Birim']) {
+    for (const h of ['Açıklama', 'Adet', 'En / kalınlık (m)', 'Boy / uzunluk (m)', 'Kenar a (m)', 'Kenar b (m)', 'r (m)', 'Açı (°)', 'Miktar', 'Birim']) {
       expect(screen.getByRole('columnheader', { name: h })).toBeInTheDocument();
     }
     const rect = screen.getByText('Dikdörtgen').closest('tr')!;
@@ -29,5 +29,24 @@ describe('Breakdown (cetvel)', () => {
     const trap = screen.getByText('Yamuk').closest('tr')!;
     expect(within(trap).getAllByRole('cell').map((c) => c.textContent)).toEqual(expect.arrayContaining(['13,601', '13,854', '8,446']));
     expect(screen.getByText('(−) Daire parçası')).toBeInTheDocument();
+  });
+  it('uzunluk, yay ve duvar satırları kendi birimiyle', () => {
+    const it2 = {
+      ...item, unit: 'm', value: 25.71,
+      breakdown: [
+        { label: 'Saçak kenarı', value: 25.71, unit: 'm', calc: [
+          { kind: 'doğru', unit: 'm', label: '', adet: 2, boy: 5, sign: 1, value: 10 },
+          { kind: 'yay', unit: 'm', label: '', adet: 1, r: 5, angle: 180, sign: 1, value: 15.708 },
+        ] },
+        { label: '~20 cm duvar', value: 12.4, unit: 'm', calc: [{ kind: 'duvar', unit: 'm', label: '', adet: 1, en: 0.2, boy: 12.4, sign: 1, value: 12.4 }] },
+      ],
+    } as unknown as Item;
+    render(<Breakdown item={it2} />);
+    expect(screen.queryByRole('columnheader', { name: 'Kenar a (m)' })).toBeNull();
+    const arc = screen.getByText('Yay').closest('tr')!;
+    expect(within(arc).getByText('adet × r × θ (radyan)')).toBeInTheDocument();
+    expect(within(arc).getAllByRole('cell').map((c) => c.textContent)).toEqual(expect.arrayContaining(['5,00', '180,00', 'm']));
+    const wall = screen.getByText('Duvar parçası').closest('tr')!;
+    expect(within(wall).getAllByRole('cell').map((c) => c.textContent)).toEqual(expect.arrayContaining(['0,20', '12,40', 'm']));
   });
 });
