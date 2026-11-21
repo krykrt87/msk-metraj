@@ -49,4 +49,13 @@ describe('Breakdown (cetvel)', () => {
     const wall = screen.getByText('Duvar parçası').closest('tr')!;
     expect(within(wall).getAllByRole('cell').map((c) => c.textContent)).toEqual(expect.arrayContaining(['0,20', '12,40', 'm']));
   });
+  it('3B seçimindeki satır vurgulanır (ad ya da sıra ile)', () => {
+    const { rerender } = render(<Breakdown item={item} focus="GF-07 KÜÇÜK SALON 01" />);
+    const row = screen.getByText('GF-07 KÜÇÜK SALON 01').closest('tr')!;
+    expect(row.className).toContain('focus');
+    expect(row.getAttribute('aria-current')).toBe('true');
+    rerender(<Breakdown item={item} focus={0} />);
+    expect(screen.getByText('GF-03 SALON 01').closest('tr')!.className).toContain('focus');
+    expect(screen.getByText('GF-07 KÜÇÜK SALON 01').closest('tr')!.className).not.toContain('focus');
+  });
 });

@@ -30,17 +30,24 @@ export default function Viewer3D({
   highlight,
   onSelectPoz,
   onClearSelection,
+  onPickElement,
   itemName,
 }: {
   model: Model3;
   highlight: Set<string> | null;
-  onSelectPoz: (poz: string) => void;
+  /** Bilgi kartındaki kalem bağlantısı: kalem + tıklanan elemanın o kalemdeki satırı. */
+  onSelectPoz: (poz: string, line?: string | number) => void;
+  /** Modelde elemana tıklandı (boşluğa tıklanınca null). Kalem seçimi değişecekse true döner (kamera yerinde kalır). */
+  onPickElement?: (el: El3 | null) => boolean;
   /** Kalem seçimini kaldırır (bütün model görünür). */
   onClearSelection: () => void;
   itemName: (poz: string) => string | undefined;
 }) {
   const clearSel = useRef(onClearSelection);
   clearSel.current = onClearSelection;
+  const pickCb = useRef(onPickElement);
+  pickCb.current = onPickElement;
+  const keepView = useRef(false); // seçim modelden değiştiyse kamera ve seçili eleman korunur
   const host = useRef<HTMLDivElement>(null);
   const overlay = useRef<HTMLDivElement>(null);
   const api = useRef<{
@@ -197,6 +204,7 @@ export default function Viewer3D({
       const h = hitAt(ev);
       if (state.current.mode === 'seç') {
         setPicked(h ? h.e : null);
+        if (pickCb.current?.(h ? h.e : null)) keepView.current = true;
         return;
       }
       if (!h) return;
@@ -295,6 +303,10 @@ export default function Viewer3D({
     const a = api.current;
     if (!a) return;
     const hits = highlight?.size ? a.meshes.filter((m) => (m.userData.el as El3).items.some((p) => highlight.has(p))) : [];
+    if (keepView.current) {
+      keepView.current = false;
+      return;
+    }
     if (hits.length) a.fit(hits);
     else if (!highlight?.size) a.fit(a.meshes.filter((m) => m.visible)); // seçim kalktı: bütün model
     setPicked(null);
@@ -388,7 +400,7 @@ export default function Viewer3D({
           <ul>
             {picked.items.map((p) => (
               <li key={p}>
-                <button type="button" onClick={() => onSelectPoz(p)}>
+                <button type="button" onClick={() => onSelectPoz(p, picked.lines?.[p])}>
                   <span className="poz">{p}</span> {itemName(p) ?? ''}
                 </button>
               </li>

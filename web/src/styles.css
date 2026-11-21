@@ -746,6 +746,17 @@ label.check {
 }
 
 /* Cetvel: Excel benzeri sütunlar */
+.cetvel tr.focus > td {
+  background: var(--stamp-soft);
+  box-shadow: inset 0 1px 0 var(--stamp), inset 0 -1px 0 var(--stamp);
+}
+.cetvel tr.focus > td:first-child {
+  box-shadow: inset 3px 0 0 var(--stamp), inset 0 1px 0 var(--stamp), inset 0 -1px 0 var(--stamp);
+  font-weight: 600;
+}
+.cetvel tr.focus-part > td {
+  background: #f1f5fb;
+}
 .cetvel-wrap {
   overflow-x: auto;
   border: 1px solid var(--rule);

@@ -112,11 +112,13 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
   const glassLines: Line[] = [];
   let devL = 0;
   let doorL = 0;
+  let wideNo = 0;
   chains.forEach((c, i) => {
     // 3B: ardışık dikmeler arası; dar bölmeler cam (+0,10 → +5,45), geniş bölmeler kapı (C.14)
+    const c1Line = `Cam hattı ${i + 1}: ${c.bays.filter((b) => b <= 2.0).length} bölme, başlangıç (${(c.pts[0].x / 1000).toFixed(1)}; ${(c.pts[0].y / 1000).toFixed(1)}) m`;
     c.bays.forEach((b, k) => {
       const wide = b > 2.0;
-      model3d.add({ layer: 'cephe', kind: 'ribbon', items: wide ? ['C.14'] : ['C.1'], label: `${wide ? 'Cam cephe kapı bölmesi' : 'Cam bölmesi'} – hat ${i + 1}, ${b.toFixed(3)} m`, path: [c.pts[k], c.pts[k + 1]], z0: wide ? 0 : 0.1, z1: wide ? 3.0 : 5.45 });
+      model3d.add({ layer: 'cephe', kind: 'ribbon', items: wide ? ['C.14'] : ['C.1'], lines: wide ? { 'C.14': wideNo++ } : { 'C.1': c1Line }, label: `${wide ? 'Cam cephe kapı bölmesi' : 'Cam bölmesi'} – hat ${i + 1}, ${b.toFixed(3)} m`, path: [c.pts[k], c.pts[k + 1]], z0: wide ? 0 : 0.1, z1: wide ? 3.0 : 5.45 });
     });
     const normal = c.bays.filter((b) => b <= 2.0);
     const wide = c.bays.filter((b) => b > 2.0);

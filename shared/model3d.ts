@@ -21,6 +21,8 @@ export interface El3 {
   kind: 'prism' | 'flat' | 'ribbon' | 'pin';
   /** Elemanın ait olduğu metraj kalemleri (poz). */
   items: string[];
+  /** Kalem başına hesap detayındaki satır: satır adı ya da sırası. */
+  lines?: Record<string, string | number>;
   label: string;
   /** prism / flat: [dış halka, boşluklar…], her halka [x, y][] */
   loops?: [number, number][][];

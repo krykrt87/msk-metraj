@@ -2,12 +2,14 @@
 import type { El3, Layer3, Model3 } from '../../../shared/model3d';
 import type { P } from '../lib/geom';
 
-type Raw = { layer: Layer3; kind: El3['kind']; items: string[]; label: string; loops?: P[][]; path?: P[]; closed?: boolean; z0: number; z1: number };
-const raw: Raw[] = [];
+export type Raw3 = { layer: Layer3; kind: El3['kind']; items: string[]; lines?: Record<string, string | number>; label: string; loops?: P[][]; path?: P[]; closed?: boolean; z0: number; z1: number };
+const raw: Raw3[] = [];
 
 export const model3d = {
-  add(e: Raw) {
+  /** Eklenen nesneyi döndürür (satır adı sonradan belli olursa lines güncellenebilir). */
+  add(e: Raw3): Raw3 {
     raw.push(e);
+    return e;
   },
   clear() {
     raw.length = 0;
@@ -20,6 +22,7 @@ export const model3d = {
       layer: e.layer,
       kind: e.kind,
       items: [...new Set(e.items)],
+      ...(e.lines ? { lines: e.lines } : {}),
       label: e.label,
       ...(e.loops ? { loops: e.loops.map((l) => simplify(dedupe(l), 15).map(tr)).filter((l) => l.length >= 3) } : {}),
       ...(e.path ? { path: simplify(dedupe(e.path), 15, !!e.closed).map(tr) } : {}),

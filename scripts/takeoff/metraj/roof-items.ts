@@ -495,30 +495,36 @@ Ayrıca 4 adet "kare_kesitli_gider" çizim dışında, (412–465; 0) civarında
   const bigHall = halls.reduce((a, h) => (area(h.inner) > area(a.inner) ? h : a));
   const roofZ = (h: (typeof halls)[number]) => (h === bigHall ? 16.72 : 14.93);
   const paZ = (h: (typeof halls)[number]) => (h === bigHall ? 17.87 : 16.06);
-  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.3'], label: 'Çakıllı teras çatı +7,10', loops: [outer, ...holes], z0: 7.1, z1: 7.1 });
-  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.4'], label: 'Alçak çatı +3,70 (KD)', loops: neHatch.loops!, z0: 3.7, z1: 3.7 });
-  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.5'], label: 'Alçak çatı/teras +3,70 (KB)', loops: [rc(nwI)], z0: 3.7, z1: 3.7 });
-  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.6'], label: 'Saçak (kanopi) üstü +7,60', loops: [canopyPoly], z0: 7.6, z1: 7.6 });
-  for (const e of canopyEdge) model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['B.7'], label: `Saçak serbest kenarı – ${e.label} (+6,00 → +7,60)`, path: e.pts, z0: 6.0, z1: 7.6 });
+  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.3'], lines: { 'B.3': 'Dış halka (parapet iç yüzü)' }, label: 'Çakıllı teras çatı +7,10', loops: [outer, ...holes], z0: 7.1, z1: 7.1 });
+  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.4'], lines: { 'B.4': 'Çakıllı alan (tarama, parapet içi)' }, label: 'Alçak çatı +3,70 (KD)', loops: neHatch.loops!, z0: 3.7, z1: 3.7 });
+  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.5'], lines: { 'B.5': 'Parapet içi alan' }, label: 'Alçak çatı/teras +3,70 (KB)', loops: [rc(nwI)], z0: 3.7, z1: 3.7 });
+  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.6'], lines: { 'B.6': 'Saçak çokgeni (serbest kenar ↔ parapet dış yüzü)' }, label: 'Saçak (kanopi) üstü +7,60', loops: [canopyPoly], z0: 7.6, z1: 7.6 });
+  for (const e of canopyEdge) model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['B.7'], lines: { 'B.7': e.label }, label: `Saçak serbest kenarı – ${e.label} (+6,00 → +7,60)`, path: e.pts, z0: 6.0, z1: 7.6 });
   for (const h of halls) {
-    model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.2'], label: `${h.name} çatısı (parapet içi) +${roofZ(h).toFixed(2)}`, loops: [h.inner], z0: roofZ(h), z1: roofZ(h) });
-    model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['B.9'], label: `${h.name} parapeti (dış yüz)`, path: h.outer, closed: true, z0: roofZ(h), z1: paZ(h) });
+    model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.2'], lines: { 'B.2': `${h.name} (parapet içi)` }, label: `${h.name} çatısı (parapet içi) +${roofZ(h).toFixed(2)}`, loops: [h.inner], z0: roofZ(h), z1: roofZ(h) });
+    model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['B.9'], lines: { 'B.9': h.name }, label: `${h.name} parapeti (dış yüz)`, path: h.outer, closed: true, z0: roofZ(h), z1: paZ(h) });
     model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['C.2', 'C.3'], label: `${h.name} kabuğu (+7,10 → çatı)`, path: h.outer, closed: true, z0: 7.1, z1: roofZ(h) });
   }
-  for (const f of uk) model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.1'], label: 'Uzay kafes izdüşümü', loops: [f.pts!], z0: 13.5, z1: 13.5 });
-  const parPaths: [string, P[], boolean][] = [
-    ...southChain.map((p): [string, P[], boolean] => ['Güney eğrisel parapet', p, false]),
-    ['Batı (yıldız) cephe parapeti', subLine(g, ch(639.47, 6022.13), gTot), false],
-    ['Kuzey cephe parapeti', subLine(g, ch(715.27, 6025.68), ch(659.77, 6025.68)), false],
-    ['Doğu kademeli cephe parapeti', subLine(g, ch(722.97, 5981.58), ch(715.27, 6016.78)), false],
-    ...voids.map((v): [string, P[], boolean] => [v.label, v.loop, true]),
+  let uh = 0;
+  let us = 0;
+  for (const f of uk) {
+    const ub = bbox(f.pts!);
+    const ul = M(ub.maxX - ub.minX) < 3 ? `Derz şeridi ${++us}` : `${['Batı', 'Orta', 'Doğu'][uh++] ?? ''} salon paneli`;
+    model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.1'], lines: { 'B.1': ul }, label: `Uzay kafes izdüşümü – ${ul}`, loops: [f.pts!], z0: 13.5, z1: 13.5 });
+  }
+  const parPaths: [string, P[], boolean, string][] = [
+    ...southChain.map((p): [string, P[], boolean, string] => ['Güney eğrisel parapet', p, false, 'Güney eğrisel parapet (dış yüz)']),
+    ['Batı (yıldız) cephe parapeti', subLine(g, ch(639.47, 6022.13), gTot), false, 'Batı (yıldız) cephe parapeti (dış yüz)'],
+    ['Kuzey cephe parapeti', subLine(g, ch(715.27, 6025.68), ch(659.77, 6025.68)), false, 'Kuzey cephe parapeti, MF-01 üstü (dış yüz)'],
+    ['Doğu kademeli cephe parapeti', subLine(g, ch(722.97, 5981.58), ch(715.27, 6016.78)), false, 'Doğu kademeli cephe parapeti (dış yüz)'],
+    ...voids.map((v): [string, P[], boolean, string] => [v.label, v.loop, true, 'Boşluk çevre duvarları (2 daire + avlu, dış yüz)']),
   ];
-  for (const [label, p, closed] of parPaths) model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['B.8'], label, path: p, closed, z0: 7.1, z1: 7.6 });
-  for (const x of gutterLines) for (const l of [x.a, x.b]) model3d.add({ layer: 'çatı', kind: 'ribbon', items: ['B.10'], label: `Gizli dere – ${x.h.name}`, path: l, z0: roofZ(x.h), z1: roofZ(x.h) + 0.15 });
-  for (const o of outlets) model3d.add({ layer: 'donatı', kind: 'pin', items: ['B.11'], label: 'Çatı süzgeci (Wavin QS-M-75)', path: [o.at!], z0: inTerrace(o.at!) ? 7.1 : 3.7, z1: (inTerrace(o.at!) ? 7.1 : 3.7) + 0.4 });
+  for (const [label, p, closed, line] of parPaths) model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['B.8'], lines: { 'B.8': line }, label, path: p, closed, z0: 7.1, z1: 7.6 });
+  for (const x of gutterLines) for (const l of [x.a, x.b]) model3d.add({ layer: 'çatı', kind: 'ribbon', items: ['B.10'], lines: { 'B.10': x.h.name }, label: `Gizli dere – ${x.h.name}`, path: l, z0: roofZ(x.h), z1: roofZ(x.h) + 0.15 });
+  for (const o of outlets) model3d.add({ layer: 'donatı', kind: 'pin', items: ['B.11'], lines: { 'B.11': inTerrace(o.at!) ? '+7,10 çakıllı teras' : '+3,70 alçak çatılar' }, label: 'Çatı süzgeci (Wavin QS-M-75)', path: [o.at!], z0: inTerrace(o.at!) ? 7.1 : 3.7, z1: (inTerrace(o.at!) ? 7.1 : 3.7) + 0.4 });
   for (const d of hallDrains) {
     const h = hallOf(d.at!);
-    if (h) model3d.add({ layer: 'donatı', kind: 'pin', items: ['B.12'], label: `Gizli dere süzgeci – ${h.name}`, path: [d.at!], z0: roofZ(h), z1: roofZ(h) + 0.4 });
+    if (h) model3d.add({ layer: 'donatı', kind: 'pin', items: ['B.12'], lines: { 'B.12': h.name }, label: `Gizli dere süzgeci – ${h.name}`, path: [d.at!], z0: roofZ(h), z1: roofZ(h) + 0.4 });
   }
   for (const gr of groups) model3d.add({ layer: 'donatı', kind: 'pin', items: ['B.13'], label: 'Yağmur iniş borusu Ø110', path: [gr[0]], z0: 0, z1: 7.1 });
   return { items, findings };

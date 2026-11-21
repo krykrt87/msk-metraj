@@ -41,14 +41,14 @@ async function main() {
   carpet.forEach((r) => (r.flooring = 'Halı kaplama'));
   gf.rows.filter((r) => r.floor === 'Zemin Kat' && !carpet.includes(r)).forEach((r) => (r.flooring = 'ID projesine göre'));
   // 3B: döşeme plağı ve mahaller (asma kat çizimde +465,3 m doğuya kaydırılmış → geri; döşeme +3,80)
-  model3d.add({ layer: 'döşeme', kind: 'prism', items: ['A.3', 'A.4'], label: 'Zemin kat döşemesi (kat genel sınırı)', loops: [gf.plate.pts], z0: -0.3, z1: 0 });
+  model3d.add({ layer: 'döşeme', kind: 'prism', items: ['A.3', 'A.4'], lines: { 'A.3': 'Kat genel sınırı alanı', 'A.4': 'Kat genel sınırı çevresi' }, label: 'Zemin kat döşemesi (kat genel sınırı)', loops: [gf.plate.pts], z0: -0.3, z1: 0 });
   for (const r of gf.rows) {
     const sh = gf.shapes.get(r.id);
     if (!sh) continue;
     const mf = r.floor !== 'Zemin Kat';
     const dx = bbox(sh).minX > 1000e3 ? -465300 : 0;
     const z = mf ? 3.8 : 0.01;
-    model3d.add({ layer: 'mahal', kind: 'flat', items: mf ? ['A.2'] : carpet.includes(r) ? ['A.1', 'F.1'] : ['A.1', 'F.2'], label: `${r.code} ${r.name} – ${r.area.toFixed(2)} m²`, loops: [sh.map((p) => ({ x: p.x + dx, y: p.y }))], z0: z, z1: z });
+    model3d.add({ layer: 'mahal', kind: 'flat', items: mf ? ['A.2'] : carpet.includes(r) ? ['A.1', 'F.1'] : ['A.1', 'F.2'], lines: mf ? { 'A.2': `${r.code} ${r.name}`.trim() } : carpet.includes(r) ? { 'A.1': `${r.code} ${r.name}`.trim(), 'F.1': `${r.code} ${r.name}` } : { 'A.1': `${r.code} ${r.name}`.trim() }, label: `${r.code} ${r.name} – ${r.area.toFixed(2)} m²`, loops: [sh.map((p) => ({ x: p.x + dx, y: p.y }))], z0: z, z1: z });
   }
   items.push({
     poz: 'F.1', group: 'F', name: 'Halı kaplama – salonlar ve küçük salonlar', unit: 'm²', value: Math.round(carpet.reduce((s, r) => s + r.area, 0) * 100) / 100,
@@ -157,6 +157,17 @@ async function main() {
   const m3 = model3d.build(origin);
   writeFileSync('work/model3d.json', JSON.stringify(m3));
   console.log(`3B model: ${m3.elements.length} eleman`);
+  // 3B eleman → hesap detayı satırı bağlantılarının hepsi gerçek bir satıra düşmeli
+  const miss: string[] = [];
+  for (const e of m3.elements)
+    for (const [poz, ref] of Object.entries(e.lines ?? {})) {
+      const it = items.find((x) => x.poz === poz);
+      const ok = !!it && (typeof ref === 'number' ? ref < it.lines.length : it.lines.some((l) => l.label === ref));
+      if (!ok) miss.push(`${poz} ← ${e.label} (${ref})`);
+    }
+  const linked = m3.elements.filter((e) => e.lines && Object.keys(e.lines).length).length;
+  console.log(`3B satır bağlantısı: ${linked}/${m3.elements.length} eleman${miss.length ? `, ${miss.length} hatalı` : ''}`);
+  if (miss.length) throw new Error('3B satır bağlantısı tutmuyor:\n' + [...new Set(miss)].slice(0, 15).join('\n'));
 
   const order = (p: string) => p.split('.').map((x) => (/^\d+$/.test(x) ? x.padStart(4, '0') : x)).join('.');
   items.sort((a, b) => order(a.poz).localeCompare(order(b.poz)));

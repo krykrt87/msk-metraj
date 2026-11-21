@@ -64,8 +64,9 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
   // --- Duvarlar (A_Patt_Wall taramaları)
   const walls = flat.filter((f) => top(f) === '4199_AMH_Walls_GF' && f.layer === 'A_Patt_Wall' && f.t === 'HATCH' && f.loops);
   const cls = new Map<number, { n: number; L: number; A: number; ext: number; pcs: { t: number; L: number }[] }>();
+  const wallRaws: { raw: ReturnType<typeof model3d.add>; tc: number }[] = [];
   for (const h of walls) {
-    model3d.add({ layer: 'duvar', kind: 'prism', items: ['G.1', 'G.2'], label: 'Duvar (A_Patt_Wall taraması)', loops: h.loops!, z0: 0, z1: 7.1 });
+    const wallRaw = model3d.add({ layer: 'duvar', kind: 'prism', items: ['G.1', 'G.2'], label: 'Duvar (A_Patt_Wall taraması)', loops: h.loops!, z0: 0, z1: 7.1 });
     const A = regionArea(h.loops!);
     const Pm = h.loops!.reduce((s, l) => s + length(l, true), 0);
     const disc = (Pm / 2) ** 2 - 4 * A;
@@ -77,6 +78,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     const ext = plate.pts.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < Math.max(1000, L / 2));
     const k = cls.get(tc) ?? { n: 0, L: 0, A: 0, ext: 0, pcs: [] };
     k.pcs.push({ t, L });
+    wallRaws.push({ raw: wallRaw, tc });
     k.n++;
     k.L += L;
     k.A += A;
@@ -103,6 +105,11 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     calc: wallCalc(k, 'm'),
     calcA: wallCalc(k, 'm²'),
   }));
+  for (const w of wallRaws) {
+    const label = `~${w.tc / 10} cm kalınlık (${cls.get(w.tc)!.n} parça)`;
+    w.raw.lines = { 'G.1': label, 'G.2': label };
+    w.raw.label = `Duvar ~${w.tc / 10} cm (A_Patt_Wall taraması)`;
+  }
   const wallL = [...cls.values()].reduce((s, k) => s + k.L, 0) / 1000;
   const wallA = [...cls.values()].reduce((s, k) => s + k.A, 0) / 1e6;
   items.push({
@@ -126,7 +133,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
   const mov = flat.filter((f) => f.path.includes('movatech_hareetli_panel_plan_01'));
   const trackCalc = mergeRows(mov.filter((f) => f.layer === 'A_Trce_Hidn' && f.pts).flatMap((f) => decomposeLength(f.pts!, !!f.closed)));
   const track = trackCalc.reduce((t, r) => t + r.value, 0);
-  for (const t of mov.filter((f) => f.layer === 'A_Trce_Hidn' && f.pts)) model3d.add({ layer: 'donatı', kind: 'ribbon', items: ['G.4', 'G.5'], label: 'Hareketli bölme rayı', path: t.pts!, closed: !!t.closed, z0: 0, z1: 6.5 });
+  for (const t of mov.filter((f) => f.layer === 'A_Trce_Hidn' && f.pts)) model3d.add({ layer: 'donatı', kind: 'ribbon', items: ['G.4', 'G.5'], lines: { 'G.4': 'Ray hattı toplamı' }, label: 'Hareketli bölme rayı', path: t.pts!, closed: !!t.closed, z0: 0, z1: 6.5 });
   const panelCount = (name: string) => mov.filter((f) => f.t === 'INSERT' && f.name === name).length;
   items.push({
     poz: 'G.4', group: 'G', name: 'Hareketli bölme – ray hattı uzunluğu (salonlar arası)', unit: 'm', value: r2(track),
@@ -160,9 +167,12 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
   }
   const sorted = [...doorGroups.entries()].sort((a, b) => a[0].localeCompare(b[0], 'tr'));
   const doorKey = (d: (typeof doors)[number]) => (d.leaves.length === 0 ? 'Kanat yayı olmayan kapı (sürgülü/özel)' : d.leaves.length === 1 ? `Tek kanatlı kapı – kanat ${d.leaves[0] / 10} cm` : `Çift kanatlı kapı – kanatlar ${d.leaves.map((x) => x / 10).join(' + ')} cm`);
+  const doorNo = new Map<string, number>();
   for (const d of doors) {
     const k = sorted.findIndex(([kk]) => kk === doorKey(d));
-    model3d.add({ layer: 'donatı', kind: 'pin', items: [`H.${k + 1}`, `H.${sorted.length + 1}`], label: `${doorKey(d)} (blok ${d.name})`, path: [d.at], z0: 0, z1: 2.2 });
+    const n = doorNo.get(doorKey(d)) ?? 0;
+    doorNo.set(doorKey(d), n + 1);
+    model3d.add({ layer: 'donatı', kind: 'pin', items: [`H.${k + 1}`, `H.${sorted.length + 1}`], lines: { [`H.${k + 1}`]: n }, label: `${doorKey(d)} (blok ${d.name})`, path: [d.at], z0: 0, z1: 2.2 });
   }
   sorted.forEach(([k, n], i) => {
     items.push({
@@ -205,7 +215,11 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     kinds.set(k, e);
   }
   [...kinds.entries()].sort((a, b) => b[1].n - a[1].n).forEach(([k, e], i) => {
-    for (const p of e.pts) model3d.add({ layer: 'kolon', kind: 'prism', items: [`I.${i + 1}`], label: k, loops: [p], z0: 0, z1: 7.1 });
+    for (const p of e.pts) {
+      const b = bbox(p);
+      const inside = pointInPolygon({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 }, plate.pts);
+      model3d.add({ layer: 'kolon', kind: 'prism', items: [`I.${i + 1}`], lines: { [`I.${i + 1}`]: inside ? 'Bina konturu içinde' : 'Bina konturu dışında (saçak/kanopi altı)' }, label: k, loops: [p], z0: 0, z1: 7.1 });
+    }
     items.push({
       poz: `I.${i + 1}`, group: 'I', name: k, unit: 'adet', value: e.n,
       method: 'Zemin kat taşıyıcı bloğundaki kapalı kesitler (katman A_Stuc_Conc) sayıldı ve kesit alanına göre sınıflandı. Bilgi amaçlıdır; kesin değerler statik projeden alınır.',
@@ -222,7 +236,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
   const inB = (f: Flat) => !!f.pts && f.pts.some((p) => pointInPolygon(p, plate.pts));
   const cabinDoors = flat.filter((f) => f.layer === '_kompakt laminat' && f.t === 'ARC' && inB(f));
   const cabinPanels = flat.filter((f) => f.layer === '_kompakt laminat' && f.t === 'PLINE' && inB(f));
-  for (const a of cabinDoors) model3d.add({ layer: 'donatı', kind: 'pin', items: ['J.1'], label: 'WC kabin kapısı', path: [a.pts![0]], z0: 0, z1: 2.0 });
+  for (const a of cabinDoors) model3d.add({ layer: 'donatı', kind: 'pin', items: ['J.1'], lines: { 'J.1': 'Kabin kapısı (açılım yayı)' }, label: 'WC kabin kapısı', path: [a.pts![0]], z0: 0, z1: 2.0 });
   items.push({
     poz: 'J.1', group: 'J', name: 'WC kabini – kompakt laminat (kabin kapısı adedi)', unit: 'adet', value: cabinDoors.length,
     method: 'Kompakt laminat katmanındaki (_kompakt laminat) kabin kapısı açılım yayları sayıldı; her yay bir kabin kapısıdır. Kabin bölme panelleri planda ayrıca çizgi olarak görünür.',
@@ -236,7 +250,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
   });
   const wcSym = flat.filter((f) => f.t === 'INSERT' && f.name === 'A$C34C557C7' && f.at && pointInPolygon(f.at, plate.pts));
   const wcOther = flat.filter((f) => f.t === 'INSERT' && /^(Klozet_Duravit|ada closet set-flat-1)$/.test(f.name ?? '') && f.at && pointInPolygon(f.at, plate.pts));
-  for (const w of [...wcSym, ...wcOther]) model3d.add({ layer: 'donatı', kind: 'pin', items: ['J.2'], label: `Klozet (${w.name})`, path: [w.at!], z0: 0, z1: 0.8 });
+  for (const w of [...wcSym, ...wcOther]) model3d.add({ layer: 'donatı', kind: 'pin', items: ['J.2'], lines: { 'J.2': w.name === 'A$C34C557C7' ? 'Kabin içi klozet (A$C34C557C7)' : w.name! }, label: `Klozet (${w.name})`, path: [w.at!], z0: 0, z1: 0.8 });
   items.push({
     poz: 'J.2', group: 'J', name: 'Klozet (asma, kabin içi + engelli/kulis WC)', unit: 'adet', value: wcSym.length + wcOther.length,
     method: 'Kabin içi klozet sembol blokları (A$C34C557C7) ile kulis/engelli WC klozet blokları (Klozet_Duravit, ada closet set) bina konturu içinde sayıldı.',

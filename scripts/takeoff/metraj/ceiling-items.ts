@@ -255,8 +255,10 @@ export function ceilingItems(
   }
   const noteOf = (h: CH) =>
     `desen ${h.f.pattern} · katman ${h.f.layer} · renk ${h.col === 'BL' ? 'BYLAYER' : h.col} · ölçek ${Number(h.scale).toFixed(1)} · tarama #${h.idx}${h.loops.length > 1 ? ` · ${h.loops.length} halka (boşluklar düşülü)` : ''}`;
+  const lineOf = new Map<CH, string>(); // 3B: taramanın hesap detayı satırı
   const hatchLine = (h: CH, chOverride?: string): Line => {
     const ch = chOverride ?? hatchCH(h).join(' / ');
+    lineOf.set(h, `${roomOf(h)} (${planName(h)}${ch ? `, CH ${ch}` : ''})`);
     return { label: `${roomOf(h)} (${planName(h)}${ch ? `, CH ${ch}` : ''})`, value: r2(h.area), unit: 'm²', note: noteOf(h), calc: h.calc };
   };
   const srcOf = (list: CH[]): Source[] => {
@@ -343,6 +345,7 @@ export function ceilingItems(
     stripNo.set(key, k);
     const ch = hall ? hallCH.get(hall.code!) ?? '' : '';
     const lenR = Math.round(len * 1000) / 1000;
+    lineOf.set(h, `${key} şerit ${k} (üst tavan planı${ch ? `, CH ${ch}` : ''})`);
     m03Lines.push({ label: `${key} şerit ${k} (üst tavan planı${ch ? `, CH ${ch}` : ''})`, value: r2(lenR), unit: 'm', calc: [{ kind: 'doğru', unit: 'm', label: 'şerit', name: 'şerit dikdörtgeninin uzun kenarı', adet: 1, boy: lenR, sign: 1, value: lenR }], note: `genişlik ${Math.round((h.area * 1e6) / (len * 1000))} mm, alan ${tr(h.area)} m² · ${noteOf(h)}` });
   }
   m03Lines.push({ label: 'Toplam şerit alanı (bilgi)', value: r2(sum(m03)), unit: 'm²', note: `${m03.length} şerit, SOLID taramaların toplam alanı`, calc: mergeRows(m03.flatMap((h) => h.calc)) });
@@ -389,6 +392,7 @@ export function ceilingItems(
     g.mods.add(h.f.inst ?? -h.idx);
     halls.set(k, g);
   }
+  for (const [k, g] of halls) for (const h of g.hs) lineOf.set(h, `${g.l ? lname(g.l) : 'mahal bulunamadı'} (üst tavan planı${hallCH.get(k) ? `, CH ${hallCH.get(k)}` : ''})`);
   const w03Lines: Line[] = [...halls.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([k, g]) => ({
     label: `${g.l ? lname(g.l) : 'mahal bulunamadı'} (üst tavan planı${hallCH.get(k) ? `, CH ${hallCH.get(k)}` : ''})`,
     value: r2(sum(g.hs)),
@@ -543,7 +547,9 @@ export function ceilingItems(
     if (!poz) continue;
     const ch = Number(hatchCH(h)[0]);
     const z = (h.mf ? 3.8 : 0) + (ch > 0 ? ch / 100 : h.code === 'SOFFIT' ? 5.9 : h.lvl === 'L' ? 3.0 : 6.5);
-    model3d.add({ layer: 'tavan', kind: 'flat', items: [poz], label: `${h.code} – ${roomOf(h)} (CH ${ch > 0 ? ch : '?'}) – ${h.area.toFixed(2)} m²`, loops: h.g, z0: z, z1: z });
+    const ln = lineOf.get(h);
+    const line = !ln ? undefined : poz === 'D.12' ? `Brüt: ${ln}` : poz === 'D.13' ? ln.replace('mahal bulunamadı', 'mahal bulunamadı (cephe dışı saçak altı)') : ln;
+    model3d.add({ layer: 'tavan', kind: 'flat', items: [poz], ...(line ? { lines: { [poz]: line } } : {}), label: `${h.code} – ${roomOf(h)} (CH ${ch > 0 ? ch : '?'}) – ${h.area.toFixed(2)} m²`, loops: h.g, z0: z, z1: z });
   }
   return { items, roomCeilings, findings };
 }

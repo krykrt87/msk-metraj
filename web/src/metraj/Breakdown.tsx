@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, useEffect, useRef } from 'react';
 import { formatTr } from '@shared/number';
 import { partName, partRule, partTitle, unitOf } from '@shared/calc';
 import type { CalcRow, Item } from '@shared/types';
@@ -18,8 +18,14 @@ const COLS: Col[] = [
 ];
 
 /** Excel cetveli gibi: her değer kendi sütununda; parça satırları her satırın altında. */
-export function Breakdown({ item }: { item: Item }) {
+/** focus: 3B'de tıklanan elemanın satırı (satır adı ya da sırası); vurgulanır ve görünür alana kaydırılır. */
+export function Breakdown({ item, focus }: { item: Item; focus?: string | number | null }) {
   const lines = item.breakdown ?? [];
+  const focusIdx = focus === null || focus === undefined ? -1 : typeof focus === 'number' ? focus : lines.findIndex((l) => l.label === focus);
+  const focusRow = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    focusRow.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [focusIdx, item.id]);
   const parts = lines.flatMap((l) => l.calc ?? []);
   const hasParts = parts.length > 0;
   const cols = COLS.filter((c) => parts.some((r) => c.cell(r) !== ''));
@@ -59,7 +65,11 @@ export function Breakdown({ item }: { item: Item }) {
             <tbody>
               {lines.map((l, i) => (
                 <Fragment key={i}>
-                  <tr className={l.calc?.length ? 'line has-parts' : 'line'}>
+                  <tr
+                    className={`${l.calc?.length ? 'line has-parts' : 'line'}${i === focusIdx ? ' focus' : ''}`}
+                    ref={i === focusIdx ? focusRow : undefined}
+                    aria-current={i === focusIdx ? 'true' : undefined}
+                  >
                     <td>{l.label}</td>
                     {hasParts && <td />}
                     {cols.map((c) => (
@@ -70,7 +80,7 @@ export function Breakdown({ item }: { item: Item }) {
                     <td className="note">{l.note ?? ''}</td>
                   </tr>
                   {(l.calc ?? []).map((r, k) => (
-                    <tr key={k} className={`part${r.sign < 0 ? ' minus' : ''}`}>
+                    <tr key={k} className={`part${r.sign < 0 ? ' minus' : ''}${i === focusIdx ? ' focus-part' : ''}`}>
                       <td className="part-name">
                         {r.sign < 0 ? '(−) ' : ''}
                         {partTitle(r)}

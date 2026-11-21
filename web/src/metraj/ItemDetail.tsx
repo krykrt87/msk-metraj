@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { can } from '@shared/access';
 import { formatTr } from '@shared/number';
 import type { FacadeRow, Item, Room, UserProfile } from '@shared/types';
@@ -22,14 +22,20 @@ export function ItemDetail({
   values,
   rooms,
   facade,
+  focusLine,
 }: {
   item: Item;
   profile: UserProfile;
   values: Record<string, number | null>;
   rooms: Room[];
   facade: FacadeRow[];
+  /** 3B'de tıklanan elemanın hesap detayı satırı (ad ya da sıra). */
+  focusLine?: string | number | null;
 }) {
   const [tab, setTab] = useState<Tab>('hesap');
+  useEffect(() => {
+    if (focusLine !== null && focusLine !== undefined) setTab('hesap');
+  }, [focusLine]);
   const history = useHistory({ type: 'item', id: item.id });
   const editable = can(profile, 'edit') && item.status !== 'kesinlesti' && !item.cancelled;
   const differsFromExcel = item.importedValue !== null && item.value !== null && Math.abs(item.importedValue - item.value) > 1e-9;
@@ -100,7 +106,7 @@ export function ItemDetail({
         ))}
       </div>
       <div className="tab-body">
-        {active === 'hesap' && <Breakdown item={item} />}
+        {active === 'hesap' && <Breakdown item={item} focus={focusLine} />}
         {active === 'gecmis' && <HistoryList entries={history.data} unit={item.unit} />}
         {active === 'duzelt' && <CorrectionForm key={item.id} item={item} submit={api.correctItem} onDone={() => setTab('gecmis')} />}
         {active === 'formul' && (

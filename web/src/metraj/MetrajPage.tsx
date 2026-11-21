@@ -54,6 +54,24 @@ export function MetrajPage({ profile }: { profile: UserProfile }) {
   const byPoz = useMemo(() => new Map(items.data.map((i) => [i.poz, i])), [items.data]);
   const highlight = useMemo(() => (selected ? highlightPoz(selected.poz, (p) => byPoz.get(p)?.formula) : null), [selected, byPoz]);
   const m3 = useModel3d();
+  // 3B'de tıklanan elemanın hesap detayı satırı
+  const [focus, setFocus] = useState<{ poz: string; line: string | number | null } | null>(null);
+  useEffect(() => {
+    if (focus && selected?.poz !== focus.poz) setFocus(null);
+  }, [selected?.poz]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pickElement = (el: { items: string[]; lines?: Record<string, string | number> } | null): boolean => {
+    if (!el || !el.items.length) {
+      setFocus(null);
+      return false;
+    }
+    const cur = selected?.poz;
+    const poz = cur && el.items.includes(cur) ? cur : el.items[0];
+    setFocus({ poz, line: el.lines?.[poz] ?? null });
+    const it = byPoz.get(poz);
+    if (!it || poz === cur) return false;
+    setParams({ kalem: it.id });
+    return true;
+  };
 
   if (items.error) return <p className="center-note">Veri okunamadı: {items.error.message}</p>;
   return (
@@ -73,10 +91,13 @@ export function MetrajPage({ profile }: { profile: UserProfile }) {
               highlight={highlight}
               itemName={(p) => byPoz.get(p)?.name}
               onClearSelection={() => setParams({})}
-              onSelectPoz={(p) => {
+              onSelectPoz={(p, line) => {
                 const it = byPoz.get(p);
-                if (it) setParams({ kalem: it.id });
+                if (!it) return;
+                setFocus({ poz: p, line: line ?? null });
+                setParams({ kalem: it.id });
               }}
+              onPickElement={pickElement}
             />
           </Suspense>
         ) : (
@@ -96,7 +117,7 @@ export function MetrajPage({ profile }: { profile: UserProfile }) {
         />
         <div className="detail-scroll">
           {selected ? (
-            <ItemDetail item={selected} profile={profile} values={values} rooms={rooms.data} facade={facade.data} />
+            <ItemDetail item={selected} profile={profile} values={values} rooms={rooms.data} facade={facade.data} focusLine={focus?.poz === selected.poz ? focus.line : null} />
           ) : (
             <p className="hint pad">Kalem seçilmedi.</p>
           )}
