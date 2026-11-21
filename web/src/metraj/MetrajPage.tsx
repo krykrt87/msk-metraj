@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { highlightPoz } from '@shared/model3d';
+import { useModel3d } from '../viewer/useModel3d';
 import { useSearchParams } from 'react-router';
 import type { UserProfile } from '@shared/types';
 import { useDiscipline, useFacade, useItems, useRooms } from '../data/hooks';
@@ -6,6 +8,7 @@ import { ResizeHandle } from '../common/ResizeHandle';
 import { ItemDetail } from './ItemDetail';
 import { ItemList } from './ItemList';
 
+const Viewer3D = lazy(() => import('../viewer/Viewer3D'));
 const KEY = 'metraj.detailWidth';
 const MIN = 360;
 const readWidth = (): number | null => {
@@ -48,6 +51,9 @@ export function MetrajPage({ profile }: { profile: UserProfile }) {
   const selectedId = params.get('kalem');
   const selected = items.data.find((i) => i.id === selectedId) ?? null;
   const values = useMemo(() => Object.fromEntries(items.data.map((i) => [i.id, i.value])), [items.data]);
+  const byPoz = useMemo(() => new Map(items.data.map((i) => [i.poz, i])), [items.data]);
+  const highlight = useMemo(() => (selected ? highlightPoz(selected.poz, (p) => byPoz.get(p)?.formula) : null), [selected, byPoz]);
+  const m3 = useModel3d();
 
   if (items.error) return <p className="center-note">Veri okunamadı: {items.error.message}</p>;
   return (
@@ -60,19 +66,23 @@ export function MetrajPage({ profile }: { profile: UserProfile }) {
         )}
       </aside>
       <section className="pane viewer-pane">
-        <div className="viewer-empty">
-          {selected ? (
-            <p>
-              {selected.drawings.length > 0
-                ? `Kaynak paftalar: ${selected.drawings.map((d) => d.replace('4199-A-DD-', '')).join(', ')}`
-                : 'Bu kalem için pafta tanımlı değil.'}
-              <br />
-              <span className="hint">Pafta görüntüleyici bir sonraki adımda bu alana geliyor.</span>
-            </p>
-          ) : (
-            <p>Soldan bir kalem seçin.</p>
-          )}
-        </div>
+        {m3.model ? (
+          <Suspense fallback={<p className="viewer-empty">3B görüntüleyici yükleniyor…</p>}>
+            <Viewer3D
+              model={m3.model}
+              highlight={highlight}
+              itemName={(p) => byPoz.get(p)?.name}
+              onSelectPoz={(p) => {
+                const it = byPoz.get(p);
+                if (it) setParams({ kalem: it.id });
+              }}
+            />
+          </Suspense>
+        ) : (
+          <div className="viewer-empty">
+            <p>{m3.error ?? '3B model yükleniyor…'}</p>
+          </div>
+        )}
       </section>
       <aside className="pane detail-pane">
         <ResizeHandle

@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 
 const D = 'projects/msk-4199/disciplines/A';
 const PDF = `${D}/drawings/4199-A-DD-01-02-300/r0.pdf`;
+const MODEL = `${D}/model/model3d.json`;
 let env: RulesTestEnvironment;
 
 const profile = (role: string, drawings: boolean, active = true) => ({
@@ -39,6 +40,7 @@ beforeEach(async () => {
     await setDoc(doc(db, `${D}/drawings/4199-A-DD-01-02-300`), { title: 'ÇATI PLANI Zone 1' });
     await setDoc(doc(db, `${D}/findings/1`), { no: 1, topic: 't', drawingsText: '', finding: 'f', suggestion: 's', status: 'acik' });
     await uploadBytes(ref(ctx.storage(), PDF), new Uint8Array([37, 80, 68, 70]), { contentType: 'application/pdf' });
+    await uploadBytes(ref(ctx.storage(), MODEL), new TextEncoder().encode('{}'), { contentType: 'application/json' });
   });
 });
 
@@ -108,5 +110,11 @@ describe('Storage kuralları', () => {
     await assertSucceeds(uploadBytes(ref(as('admin').storage(), path), bytes, { contentType: 'application/pdf' }));
     await assertFails(uploadBytes(ref(as('kontrol').storage(), path), bytes, { contentType: 'application/pdf' }));
     await assertFails(uploadBytes(ref(as('admin').storage(), path), bytes, { contentType: 'image/png' }));
+  });
+  it('3B modeli görüntüleme yetkisi olan okur (pafta yetkisi gerekmez); kimse yazamaz', async () => {
+    await assertSucceeds(getBytes(ref(as('satin').storage(), MODEL)));
+    await assertFails(getBytes(ref(as('pasif').storage(), MODEL)));
+    await assertFails(getBytes(ref(as('yabanci').storage(), MODEL)));
+    await assertFails(uploadBytes(ref(as('admin').storage(), MODEL), new TextEncoder().encode('{}'), { contentType: 'application/json' }));
   });
 });

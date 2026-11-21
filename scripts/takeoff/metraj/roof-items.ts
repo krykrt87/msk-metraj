@@ -5,6 +5,7 @@ import { cleanText, flatten, type Flat } from '../lib/flatten';
 import { area, bbox, length, pointInPolygon, type P } from '../lib/geom';
 import { decomposeLength, decomposeRegion, gridRects, mergeRows, type CalcRow } from '../lib/decompose';
 import type { Line, TakeoffItem } from './model';
+import { model3d } from './model3d';
 const exA = (l: P[]) => decomposeRegion([l]).reduce((t, r) => t + r.value, 0) * 1e6; // mm², cetvel toplamı
 const csum = (rows: CalcRow[]) => rows.reduce((t, r) => t + r.value, 0);
 /** Satırlardan ara toplam cetveli (her satır bir 'kalem' satırı). */
@@ -375,7 +376,7 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
       { kind: 'doğru', unit: 'm', label: '1. kenar', name: '1. kenar çizgisi (ortalama için ½)', adet: 0.5, boy: la, sign: 1, value: la / 2 },
       { kind: 'doğru', unit: 'm', label: '2. kenar', name: '2. kenar çizgisi (ortalama için ½)', adet: 0.5, boy: lb, sign: 1, value: lb / 2 },
     ];
-    return { h, L: ((la + lb) / 2) * 1000, w, calc };
+    return { h, L: ((la + lb) / 2) * 1000, w, calc, a, b };
   });
   const dereNote = ukNotes.find((t) => /DERE/.test(t));
   items.push({
@@ -488,5 +489,37 @@ Ayrıca 4 adet "kare_kesitli_gider" çizim dışında, (412–465; 0) civarında
     suggestion: 'Eğim betonu ortalama kalınlığını bu %1 eğim ve drenaj bölmeleriyle (A_Trce_Hidn mahya/dere çizgileri) hesaplayın; düz çatı için %1 alt sınırdır, yalıtım üreticisinin onayı alınmalı.',
   });
 
+  // ---------------------------------------------------------------- 3B
+  // Kotlar (kesit 01-03-100): teras +7,10 (parapet üstü +7,60), alçak çatılar +3,70, saçak +6,00 → +7,60,
+  // salon çatıları +16,72 (Salon 01) / +14,93, salon parapet üstleri +17,87 / +16,06.
+  const bigHall = halls.reduce((a, h) => (area(h.inner) > area(a.inner) ? h : a));
+  const roofZ = (h: (typeof halls)[number]) => (h === bigHall ? 16.72 : 14.93);
+  const paZ = (h: (typeof halls)[number]) => (h === bigHall ? 17.87 : 16.06);
+  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.3'], label: 'Çakıllı teras çatı +7,10', loops: [outer, ...holes], z0: 7.1, z1: 7.1 });
+  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.4'], label: 'Alçak çatı +3,70 (KD)', loops: neHatch.loops!, z0: 3.7, z1: 3.7 });
+  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.5'], label: 'Alçak çatı/teras +3,70 (KB)', loops: [rc(nwI)], z0: 3.7, z1: 3.7 });
+  model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.6'], label: 'Saçak (kanopi) üstü +7,60', loops: [canopyPoly], z0: 7.6, z1: 7.6 });
+  for (const e of canopyEdge) model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['B.7'], label: `Saçak serbest kenarı – ${e.label} (+6,00 → +7,60)`, path: e.pts, z0: 6.0, z1: 7.6 });
+  for (const h of halls) {
+    model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.2'], label: `${h.name} çatısı (parapet içi) +${roofZ(h).toFixed(2)}`, loops: [h.inner], z0: roofZ(h), z1: roofZ(h) });
+    model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['B.9'], label: `${h.name} parapeti (dış yüz)`, path: h.outer, closed: true, z0: roofZ(h), z1: paZ(h) });
+    model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['C.2', 'C.3'], label: `${h.name} kabuğu (+7,10 → çatı)`, path: h.outer, closed: true, z0: 7.1, z1: roofZ(h) });
+  }
+  for (const f of uk) model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.1'], label: 'Uzay kafes izdüşümü', loops: [f.pts!], z0: 13.5, z1: 13.5 });
+  const parPaths: [string, P[], boolean][] = [
+    ...southChain.map((p): [string, P[], boolean] => ['Güney eğrisel parapet', p, false]),
+    ['Batı (yıldız) cephe parapeti', subLine(g, ch(639.47, 6022.13), gTot), false],
+    ['Kuzey cephe parapeti', subLine(g, ch(715.27, 6025.68), ch(659.77, 6025.68)), false],
+    ['Doğu kademeli cephe parapeti', subLine(g, ch(722.97, 5981.58), ch(715.27, 6016.78)), false],
+    ...voids.map((v): [string, P[], boolean] => [v.label, v.loop, true]),
+  ];
+  for (const [label, p, closed] of parPaths) model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['B.8'], label, path: p, closed, z0: 7.1, z1: 7.6 });
+  for (const x of gutterLines) for (const l of [x.a, x.b]) model3d.add({ layer: 'çatı', kind: 'ribbon', items: ['B.10'], label: `Gizli dere – ${x.h.name}`, path: l, z0: roofZ(x.h), z1: roofZ(x.h) + 0.15 });
+  for (const o of outlets) model3d.add({ layer: 'donatı', kind: 'pin', items: ['B.11'], label: 'Çatı süzgeci (Wavin QS-M-75)', path: [o.at!], z0: inTerrace(o.at!) ? 7.1 : 3.7, z1: (inTerrace(o.at!) ? 7.1 : 3.7) + 0.4 });
+  for (const d of hallDrains) {
+    const h = hallOf(d.at!);
+    if (h) model3d.add({ layer: 'donatı', kind: 'pin', items: ['B.12'], label: `Gizli dere süzgeci – ${h.name}`, path: [d.at!], z0: roofZ(h), z1: roofZ(h) + 0.4 });
+  }
+  for (const gr of groups) model3d.add({ layer: 'donatı', kind: 'pin', items: ['B.13'], label: 'Yağmur iniş borusu Ø110', path: [gr[0]], z0: 0, z1: 7.1 });
   return { items, findings };
 }

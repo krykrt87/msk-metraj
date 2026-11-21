@@ -10,6 +10,7 @@ import { area, bbox, pointInPolygon, regionArea, type P } from '../lib/geom';
 import { decomposeRegion, gridRects, mergeRows, type CalcRow } from '../lib/decompose';
 import { extractRooms, type RoomLabel, type RoomPoly } from '../rooms';
 import type { Line, Source, TakeoffItem } from './model';
+import { model3d } from './model3d';
 
 const CEIL = '4199-A-DD-01-05-100 / 05-200';
 const PLAN = '4199-A-DD-01-02-100';
@@ -534,5 +535,15 @@ export function ceilingItems(
   F('Desen ayrımı', 'C-G01 ile C-G02 aynı AR-SAND deseniyle çizilmiş, yalnızca renk farklı (BYLAYER / 219). C-M01 ile C-M02 aynı NET deseniyle çizilmiş, yalnızca katman öneki ve desen ölçeği farklı (189 / 31,5).', 'Çizimde ayırt edici desen kullanılmalı; metrajda renk/ölçek ham DXF\'ten okundu.');
   F('Saçak altı', `TRIANG desenli saçak altı bandı (${tr(sum(sof))} m², CH 590) tavan lejantında yok; malzeme kesit notlarından (alüminyum levha kaplama) alındı.`, 'Lejanta saçak altı kaplama tipi eklenmeli.', `${CEIL}, 4199-A-DD-01-03-100, 4199-A-DD-01-09-101`);
 
+  // 3B: her tavan taraması kendi CH kotunda (asma kat tavanları +3,80 döşemesine göre)
+  const pozOf = new Map(items.filter((i) => i.code).map((i) => [i.code!, i.poz] as const));
+  pozOf.set('SOFFIT', 'D.13');
+  for (const h of hs) {
+    const poz = pozOf.get(h.code);
+    if (!poz) continue;
+    const ch = Number(hatchCH(h)[0]);
+    const z = (h.mf ? 3.8 : 0) + (ch > 0 ? ch / 100 : h.code === 'SOFFIT' ? 5.9 : h.lvl === 'L' ? 3.0 : 6.5);
+    model3d.add({ layer: 'tavan', kind: 'flat', items: [poz], label: `${h.code} – ${roomOf(h)} (CH ${ch > 0 ? ch : '?'}) – ${h.area.toFixed(2)} m²`, loops: h.g, z0: z, z1: z });
+  }
   return { items, roomCeilings, findings };
 }

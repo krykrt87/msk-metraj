@@ -1,7 +1,8 @@
 // DWG'den üretilen metrajı (work/metraj.json) emülatöre aktarır; eski Excel verisinin yerine geçer.
 // Kullanım: npx tsx scripts/import-takeoff.ts [--file work/metraj.json] [--dry-run]
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { DISCIPLINE, PROJECT_ID } from '../shared/constants';
 import { evaluateAll } from '../shared/recompute';
 import type { Finding, Item, Room } from '../shared/types';
 import type { ImportData } from './excel/build';
@@ -95,9 +96,15 @@ async function main(argv: string[]) {
   if (off.length) throw new Error(`Formül değerleri tutmuyor: ${off.map((i) => i.id).join(', ')}`);
   console.log(`${data.items.length} kalem, ${data.rooms.length} mahal, ${data.findings.length} kontrol notu`);
   if (argv.includes('--dry-run')) return;
-  const { db } = initAdmin(argv);
+  const { db, bucket } = initAdmin(argv);
   await writeImport(db, data, { reset: true, source: `DWG metrajı ${t.generatedAt.slice(0, 10)}` });
   console.log('Emülatöre yazıldı (eski veri silindi).');
+  // 3B model (metraj motorunun geometrisinden) → Storage
+  const model = argValue(argv, '--model') ?? 'work/model3d.json';
+  if (existsSync(model)) {
+    await bucket.file(`projects/${PROJECT_ID}/disciplines/${DISCIPLINE}/model/model3d.json`).save(readFileSync(model), { contentType: 'application/json' });
+    console.log('3B model yüklendi.');
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

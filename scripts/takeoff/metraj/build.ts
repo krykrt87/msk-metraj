@@ -5,6 +5,8 @@ import { readDxf } from '../lib/dxf';
 import { flatten } from '../lib/flatten';
 import { makeMeasurer } from '../lib/regions';
 import { gfItems } from './gf-items';
+import { model3d } from './model3d';
+import { bbox } from '../lib/geom';
 import type { CalcRow } from '../lib/decompose';
 import type { Takeoff, TakeoffItem } from './model';
 import { writeReport } from './report';
@@ -38,6 +40,16 @@ async function main() {
   const carpet = gf.rows.filter((r) => /^(KÜÇÜK )?SALON \d+$/.test(r.name));
   carpet.forEach((r) => (r.flooring = 'Halı kaplama'));
   gf.rows.filter((r) => r.floor === 'Zemin Kat' && !carpet.includes(r)).forEach((r) => (r.flooring = 'ID projesine göre'));
+  // 3B: döşeme plağı ve mahaller (asma kat çizimde +465,3 m doğuya kaydırılmış → geri; döşeme +3,80)
+  model3d.add({ layer: 'döşeme', kind: 'prism', items: ['A.3', 'A.4'], label: 'Zemin kat döşemesi (kat genel sınırı)', loops: [gf.plate.pts], z0: -0.3, z1: 0 });
+  for (const r of gf.rows) {
+    const sh = gf.shapes.get(r.id);
+    if (!sh) continue;
+    const mf = r.floor !== 'Zemin Kat';
+    const dx = bbox(sh).minX > 1000e3 ? -465300 : 0;
+    const z = mf ? 3.8 : 0.01;
+    model3d.add({ layer: 'mahal', kind: 'flat', items: mf ? ['A.2'] : carpet.includes(r) ? ['A.1', 'F.1'] : ['A.1', 'F.2'], label: `${r.code} ${r.name} – ${r.area.toFixed(2)} m²`, loops: [sh.map((p) => ({ x: p.x + dx, y: p.y }))], z0: z, z1: z });
+  }
   items.push({
     poz: 'F.1', group: 'F', name: 'Halı kaplama – salonlar ve küçük salonlar', unit: 'm²', value: Math.round(carpet.reduce((s, r) => s + r.area, 0) * 100) / 100,
     method: 'Döşeme detayında (00-09-100) HALI KAPLAMA / ŞAP / SAHA BETONU dizilimi salon kesitinde gösteriliyor. Halı, Salon 01/02/03 ve Küçük Salon 01/02/03 mahallerinin net alanlarına (mahal sınırlarından) uygulandı.',
@@ -140,6 +152,11 @@ async function main() {
     });
   }
   for (const i of items.filter((x) => x.formula && !(x.poz in vals))) findings.push({ topic: 'Formül', drawings: '-', finding: `${i.poz} formülü hesaplanamadı: ${i.formula}`, suggestion: 'Başvurulan kalemi kontrol edin.' });
+
+  const origin = (() => { const b = bbox(gf.plate!.pts); return { x: Math.round((b.minX + b.maxX) / 2), y: Math.round((b.minY + b.maxY) / 2) }; })();
+  const m3 = model3d.build(origin);
+  writeFileSync('work/model3d.json', JSON.stringify(m3));
+  console.log(`3B model: ${m3.elements.length} eleman`);
 
   const order = (p: string) => p.split('.').map((x) => (/^\d+$/.test(x) ? x.padStart(4, '0') : x)).join('.');
   items.sort((a, b) => order(a.poz).localeCompare(order(b.poz)));

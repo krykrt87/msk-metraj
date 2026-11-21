@@ -15,5 +15,10 @@ service firebase.storage {
         && request.resource.size < 100 * 1024 * 1024;
       allow delete: if false;
     }
+    // 3B model: metraj aktarımıyla (yönetici SDK) yazılır; görüntüleme yetkisi olan okur
+    match /projects/{p}/disciplines/{d}/model/{file} {
+      allow read: if active() && acc(p, d).get('view', false) == true;
+      allow write: if false;
+    }
   }
 }
