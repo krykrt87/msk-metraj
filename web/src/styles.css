@@ -324,6 +324,48 @@ table.data tr.total td {
 }
 .detail-pane {
   border-left: 1px solid var(--rule);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.detail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+/* sol kenardan sürükleyerek genişletme */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 5;
+  touch-action: none;
+}
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: transparent;
+  transition: background 0.12s;
+}
+.resize-handle:hover::after,
+.resize-handle:focus-visible::after,
+body.resizing .resize-handle::after {
+  background: var(--stamp);
+}
+.resize-handle:focus-visible {
+  outline: none;
+}
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 .viewer-pane {
   background: var(--paper);
