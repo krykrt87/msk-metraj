@@ -1,0 +1,28 @@
+# Şirket dokümanları ve kaynak dosyalar depoya girmez
+Projeler/
+*.xlsx
+*.xls
+*.pdf
+*.dwg
+*.dwl
+*.dwl2
+
+# Gizli bilgiler
+.env
+.env.*
+!.env.development
+*service-account*.json
+*-firebase-adminsdk-*.json
+
+# Üretilen / yerel
+node_modules/
+dist/
+functions/lib/
+emulator-data/
+scripts/out/
+*.log
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+.superpowers/
+.claude/settings.local.json
