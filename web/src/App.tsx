@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './auth/AuthProvider';
 import { LoginPage } from './auth/LoginPage';
 import { auth } from './firebase';
 import { Shell } from './layout/Shell';
+import { MetrajPage } from './metraj/MetrajPage';
 
 function Pending({ title }: { title: string }) {
   return (
@@ -33,7 +34,7 @@ function Gate() {
   return (
     <Shell profile={profile} onSignOut={out}>
       <Routes>
-        <Route path="/" element={<Pending title="Metraj" />} />
+        <Route path="/" element={<MetrajPage profile={profile} />} />
         <Route path="/malzeme" element={<Pending title="Malzeme Listesi" />} />
         <Route path="/mahal" element={<Pending title="Mahal Listesi" />} />
         <Route path="/cephe" element={<Pending title="Cephe" />} />
