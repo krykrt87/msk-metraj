@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import type { Item } from '@shared/types';
 import { Breakdown } from './Breakdown';
 
@@ -57,5 +57,17 @@ describe('Breakdown (cetvel)', () => {
     rerender(<Breakdown item={item} focus={0} />);
     expect(screen.getByText('GF-03 SALON 01').closest('tr')!.className).toContain('focus');
     expect(screen.getByText('GF-07 KÜÇÜK SALON 01').closest('tr')!.className).not.toContain('focus');
+  });
+  it('3B karşılığı olan satır tıklanınca bildirilir; olmayan tıklanamaz', () => {
+    const onLine = vi.fn();
+    render(<Breakdown item={item} linked={new Set([1])} onLineClick={onLine} />);
+    const linkedRow = screen.getByText('GF-07 KÜÇÜK SALON 01').closest('tr')!;
+    expect(linkedRow.className).toContain('linked');
+    fireEvent.click(linkedRow);
+    expect(onLine).toHaveBeenCalledWith(1);
+    fireEvent.keyDown(linkedRow, { key: 'Enter' });
+    expect(onLine).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByText('GF-03 SALON 01').closest('tr')!);
+    expect(onLine).toHaveBeenCalledTimes(2);
   });
 });

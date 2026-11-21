@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef, type KeyboardEvent } from 'react';
 import { formatTr } from '@shared/number';
 import { partName, partRule, partTitle, unitOf } from '@shared/calc';
 import type { CalcRow, Item } from '@shared/types';
@@ -19,7 +19,18 @@ const COLS: Col[] = [
 
 /** Excel cetveli gibi: her değer kendi sütununda; parça satırları her satırın altında. */
 /** focus: 3B'de tıklanan elemanın satırı (satır adı ya da sırası); vurgulanır ve görünür alana kaydırılır. */
-export function Breakdown({ item, focus }: { item: Item; focus?: string | number | null }) {
+export function Breakdown({
+  item,
+  focus,
+  linked,
+  onLineClick,
+}: {
+  item: Item;
+  focus?: string | number | null;
+  /** 3B modelde karşılığı olan satırların sırası; bunlar tıklanabilir. */
+  linked?: Set<number>;
+  onLineClick?: (index: number) => void;
+}) {
   const lines = item.breakdown ?? [];
   const focusIdx = focus === null || focus === undefined ? -1 : typeof focus === 'number' ? focus : lines.findIndex((l) => l.label === focus);
   const focusRow = useRef<HTMLTableRowElement>(null);
@@ -66,11 +77,31 @@ export function Breakdown({ item, focus }: { item: Item; focus?: string | number
               {lines.map((l, i) => (
                 <Fragment key={i}>
                   <tr
-                    className={`${l.calc?.length ? 'line has-parts' : 'line'}${i === focusIdx ? ' focus' : ''}`}
+                    className={`${l.calc?.length ? 'line has-parts' : 'line'}${i === focusIdx ? ' focus' : ''}${linked?.has(i) ? ' linked' : ''}`}
                     ref={i === focusIdx ? focusRow : undefined}
                     aria-current={i === focusIdx ? 'true' : undefined}
+                    {...(linked?.has(i) && onLineClick
+                      ? {
+                          tabIndex: 0,
+                          title: '3B modelde göster',
+                          onClick: () => onLineClick(i),
+                          onKeyDown: (e: KeyboardEvent) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              onLineClick(i);
+                            }
+                          },
+                        }
+                      : {})}
                   >
-                    <td>{l.label}</td>
+                    <td>
+                      {linked?.has(i) && (
+                        <span className="m3-mark" aria-hidden="true">
+                          ◆{' '}
+                        </span>
+                      )}
+                      {l.label}
+                    </td>
                     {hasParts && <td />}
                     {cols.map((c) => (
                       <td key={c.key} />

@@ -23,6 +23,8 @@ export function ItemDetail({
   rooms,
   facade,
   focusLine,
+  linkedLines,
+  onLineClick,
 }: {
   item: Item;
   profile: UserProfile;
@@ -31,6 +33,9 @@ export function ItemDetail({
   facade: FacadeRow[];
   /** 3B'de tıklanan elemanın hesap detayı satırı (ad ya da sıra). */
   focusLine?: string | number | null;
+  /** 3B modelde karşılığı olan satırlar (tıklanınca modelde gösterilir). */
+  linkedLines?: Set<number>;
+  onLineClick?: (index: number) => void;
 }) {
   const [tab, setTab] = useState<Tab>('hesap');
   useEffect(() => {
@@ -106,7 +111,7 @@ export function ItemDetail({
         ))}
       </div>
       <div className="tab-body">
-        {active === 'hesap' && <Breakdown item={item} focus={focusLine} />}
+        {active === 'hesap' && <Breakdown item={item} focus={focusLine} linked={linkedLines} onLineClick={onLineClick} />}
         {active === 'gecmis' && <HistoryList entries={history.data} unit={item.unit} />}
         {active === 'duzelt' && <CorrectionForm key={item.id} item={item} submit={api.correctItem} onDone={() => setTab('gecmis')} />}
         {active === 'formul' && (

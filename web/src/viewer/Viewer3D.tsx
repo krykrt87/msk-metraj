@@ -31,6 +31,7 @@ export default function Viewer3D({
   onSelectPoz,
   onClearSelection,
   onPickElement,
+  focusIds,
   itemName,
 }: {
   model: Model3;
@@ -39,6 +40,8 @@ export default function Viewer3D({
   onSelectPoz: (poz: string, line?: string | number) => void;
   /** Modelde elemana tıklandı (boşluğa tıklanınca null). Kalem seçimi değişecekse true döner (kamera yerinde kalır). */
   onPickElement?: (el: El3 | null) => boolean;
+  /** Hesap detayında tıklanan satırın elemanları: mavi gösterilir ve görünüme sığdırılır. */
+  focusIds?: Set<string> | null;
   /** Kalem seçimini kaldırır (bütün model görünür). */
   onClearSelection: () => void;
   itemName: (poz: string) => string | undefined;
@@ -64,11 +67,12 @@ export default function Viewer3D({
   const [backend, setBackend] = useState('');
   const [hint, setHint] = useState('');
   const [error, setError] = useState('');
-  const state = useRef({ layers, highlight, mode, picked: null as El3 | null });
+  const state = useRef({ layers, highlight, mode, picked: null as El3 | null, focusIds: null as Set<string> | null | undefined });
   state.current.layers = layers;
   state.current.highlight = highlight;
   state.current.mode = mode;
   state.current.picked = picked;
+  state.current.focusIds = focusIds;
   const meas = useRef<{ list: Meas[]; start: V3 | null; preview: THREE.Line | null; snap: THREE.Mesh | null }>({ list: [], start: null, preview: null, snap: null });
 
   // --- sahne (bir kez)
@@ -139,11 +143,11 @@ export default function Viewer3D({
     };
 
     const applyStyle = () => {
-      const { layers: L, highlight: H, picked: P } = state.current;
+      const { layers: L, highlight: H, picked: P, focusIds: F } = state.current;
       for (const m of meshes) {
         const e = m.userData.el as El3;
         const hit = !!H && e.items.some((p) => H.has(p));
-        if (P && P.id === e.id) {
+        if ((P && P.id === e.id) || F?.has(e.id)) {
           m.material = pickMat;
           m.visible = true;
         } else if (H && H.size) {
@@ -298,7 +302,13 @@ export default function Viewer3D({
   // --- vurgulama, katmanlar, seçili eleman
   useEffect(() => {
     api.current?.applyStyle();
-  }, [layers, highlight, picked]);
+  }, [layers, highlight, picked, focusIds]);
+  useEffect(() => {
+    const a = api.current;
+    if (!a || !focusIds?.size) return;
+    setPicked(null);
+    a.fit(a.meshes.filter((m) => focusIds.has((m.userData.el as El3).id)));
+  }, [focusIds]);
   useEffect(() => {
     const a = api.current;
     if (!a) return;
