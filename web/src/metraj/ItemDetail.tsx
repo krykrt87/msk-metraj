@@ -5,6 +5,7 @@ import type { FacadeRow, Item, Room, UserProfile } from '@shared/types';
 import { api } from '../data/api';
 import { useHistory } from '../data/hooks';
 import { formatDateTime } from '../data/types';
+import { Breakdown } from './Breakdown';
 import { CorrectionForm } from './CorrectionForm';
 import { isUnmeasurable } from './filter';
 import { FormulaForm } from './FormulaForm';
@@ -12,7 +13,7 @@ import { HistoryList } from './HistoryList';
 import { StatusActions } from './StatusActions';
 import { StatusIcon } from './StatusIcon';
 
-type Tab = 'gecmis' | 'duzelt' | 'formul';
+type Tab = 'hesap' | 'gecmis' | 'duzelt' | 'formul';
 
 export function ItemDetail({
   item,
@@ -27,13 +28,13 @@ export function ItemDetail({
   rooms: Room[];
   facade: FacadeRow[];
 }) {
-  const [tab, setTab] = useState<Tab>('gecmis');
+  const [tab, setTab] = useState<Tab>('hesap');
   const history = useHistory({ type: 'item', id: item.id });
   const editable = can(profile, 'edit') && item.status !== 'kesinlesti' && !item.cancelled;
   const differsFromExcel = item.importedValue !== null && item.value !== null && Math.abs(item.importedValue - item.value) > 1e-9;
-  const tabs: [Tab, string][] = [['gecmis', 'Geçmiş']];
+  const tabs: [Tab, string][] = [['hesap', 'Hesap detayı'], ['gecmis', 'Geçmiş']];
   if (editable) tabs.push(['duzelt', 'Miktarı düzelt'], ['formul', 'Formül']);
-  const active = tabs.some(([t]) => t === tab) ? tab : 'gecmis';
+  const active = tabs.some(([t]) => t === tab) ? tab : 'hesap';
 
   return (
     <article className="detail">
@@ -78,7 +79,7 @@ export function ItemDetail({
         <dd>{item.confidence ?? '—'}</dd>
         {differsFromExcel && (
           <>
-            <dt>Excel'deki değer</dt>
+            <dt>İlk ölçüm (DWG)</dt>
             <dd>
               {formatTr(item.importedValue, item.unit)} {item.unit}
             </dd>
@@ -98,6 +99,7 @@ export function ItemDetail({
         ))}
       </div>
       <div className="tab-body">
+        {active === 'hesap' && <Breakdown item={item} />}
         {active === 'gecmis' && <HistoryList entries={history.data} unit={item.unit} />}
         {active === 'duzelt' && <CorrectionForm key={item.id} item={item} submit={api.correctItem} onDone={() => setTab('gecmis')} />}
         {active === 'formul' && (

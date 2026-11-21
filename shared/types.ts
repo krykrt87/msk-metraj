@@ -44,6 +44,12 @@ export interface Item {
   sourceFormula: string | null;
   updatedAt: TimeValue;
   updatedBy: Actor | null;
+  /** Hesap detayı: miktarın satır satır dökümü (DWG ölçümünden). */
+  breakdown?: { label: string; value: number | null; unit: string; note?: string }[];
+  /** Kaynak pafta ve çizim nesnesi (blok / katman). */
+  sources?: { drawing: string; where: string }[];
+  /** Varsayım, belirsizlik, proje hatası notları. */
+  notes?: string[];
 }
 
 export interface Room {

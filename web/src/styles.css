@@ -661,3 +661,26 @@ label.check {
   color: var(--ink-2);
   font-style: italic;
 }
+
+/* Hesap detayı */
+.breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.breakdown h3 {
+  font-size: var(--fs-1);
+  color: var(--ink-2);
+  margin-bottom: 4px;
+}
+.breakdown ul {
+  margin: 0;
+  padding-left: 16px;
+  font-size: var(--fs-1);
+}
+.bd-table td {
+  font-size: var(--fs-1);
+}
+.bd-note {
+  color: var(--ink-2);
+}
