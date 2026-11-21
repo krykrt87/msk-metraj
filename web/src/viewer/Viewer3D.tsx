@@ -97,12 +97,13 @@ export default function Viewer3D({
     const mats = new Map<string, THREE.Material>();
     const baseMat = (e: El3) => {
       const glass = e.items.includes('C.1');
-      const k = glass ? 'glass' : e.layer;
+      const stone = e.items.includes('C.10');
+      const k = glass ? 'glass' : stone ? 'stone' : e.layer;
       if (!mats.has(k))
         mats.set(
           k,
           new THREE.MeshStandardMaterial({
-            color: glass ? 0x8fb8d8 : COLORS[e.layer],
+            color: glass ? 0x8fb8d8 : stone ? 0xd6c6a3 : COLORS[e.layer],
             side: THREE.DoubleSide,
             transparent: glass || e.layer === 'tavan',
             opacity: glass ? 0.55 : e.layer === 'tavan' ? 0.85 : 1,

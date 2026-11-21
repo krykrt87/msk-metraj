@@ -11,6 +11,10 @@ export const model3d = {
     raw.push(e);
     return e;
   },
+  /** Daha önce eklenmiş elemanlar (ör. cephe, çatıdaki salon parapetlerinden kalibrasyon alır). */
+  find(pred: (e: Raw3) => boolean): Raw3[] {
+    return raw.filter(pred);
+  },
   clear() {
     raw.length = 0;
   },

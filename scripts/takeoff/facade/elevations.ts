@@ -1,6 +1,6 @@
 // Görünüş paftalarından cephe malzeme alanları: taramalar 50 mm ızgarada birleştirilir (XCLIP kırpması uygulanır),
 // önde olan malzeme önceliklidir (MATS sırası). Her malzemenin görünen hücreleri dikdörtgenlere ayrılır (cetvel).
-// Çıktı: work/facade-areas.json  { [görünüş]: { [malzeme]: { gross, net, src, rects: [genişlik m, yükseklik m][] } } }
+// Çıktı: work/facade-areas.json  { [görünüş]: { [malzeme]: { gross, net, src, rects: [genişlik, yükseklik, x, z][] (m) } } }
 // Çalıştırma (depo kökünden): node --max-old-space-size=8192 node_modules/tsx/dist/cli.mjs scripts/takeoff/facade/elevations.ts
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { ELEV, load, center, inWin, bbox, colStr, type Flat } from './common';
@@ -32,7 +32,7 @@ function classify(f: Flat, name: string, zb: number[]): string | null {
   if (pat === 'SOLID' && /A_Patt_Othr/.test(f.layer) && /AKRA2|arka_gor|GÖRÜNÜŞ04_YAN/.test(last) && ((z0 >= 4.0 && z1 <= 4.4) || z0 >= 7.15)) return MATS[11];
   return MATS[13];
 }
-const result: Record<string, Record<string, { gross: number; net: number; src: string; rects: [number, number][]; hatches: { x: number; y: number }[][][] | null }>> = {};
+const result: Record<string, Record<string, { gross: number; net: number; src: string; rects: [number, number, number, number][]; hatches: { x: number; y: number }[][][] | null }>> = {};
 for (const [name, e] of Object.entries(ELEV)) {
   const nx = Math.ceil((e.win[2] - e.win[0]) / CELL), ny = Math.ceil((e.win[3] - e.win[1]) / CELL);
   const owner = new Int8Array(nx * ny).fill(-1); const gross = new Array(MATS.length).fill(0);
@@ -64,8 +64,8 @@ for (const [name, e] of Object.entries(ELEV)) {
     renderPng(`work/png/facade/mat_${name}.png`, { base, highlights: hls, marks, window: { minX: x0, minY: g0 - 1500, maxX: x1, maxY: g0 + 23000 }, width: 2400, title: `${name} ${e.sheet} — hatch-based material map (XCLIP applied)` });
   }
   // görünen hücreler → dikdörtgenler (aynı sütun aralığındaki ardışık satırlar birleşir; her hücre tek dikdörtgende)
-  const rectsOf = (mi: number): [number, number][] => {
-    const out: [number, number][] = [];
+  const rectsOf = (mi: number): [number, number, number, number][] => {
+    const out: [number, number, number, number][] = [];
     let open = new Map<string, number>();
     for (let r = 0; r <= ny; r++) {
       const cur = new Map<string, number>();
@@ -83,7 +83,8 @@ for (const [name, e] of Object.entries(ELEV)) {
       for (const [k, r0] of open)
         if (cur.get(k) !== r0) {
           const [c0, c1] = k.split(',').map(Number);
-          out.push([((c1 - c0) * CELL) / 1000, ((r - r0) * CELL) / 1000]);
+          // [genişlik, yükseklik, sol x (görünüş, m), alt z (±0,00'dan, m)]
+          out.push([((c1 - c0) * CELL) / 1000, ((r - r0) * CELL) / 1000, (e.win[0] + c0 * CELL) / 1000, (e.win[1] + r0 * CELL) / 1000 - ground[name]]);
         }
       open = cur;
     }

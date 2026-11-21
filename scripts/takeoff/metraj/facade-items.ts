@@ -19,7 +19,7 @@ const ELEVS = [
   { key: 'NW', name: 'Kuzeybatı', dwg: '4199-A-DD-01-04-300' },
   { key: 'SW', name: 'Güneybatı', dwg: '4199-A-DD-01-04-400' },
 ] as const;
-type Mat = { gross: number; net: number; src: string; rects: [number, number][]; hatches: P[][][] | null };
+type Mat = { gross: number; net: number; src: string; rects: [number, number, number, number][]; hatches: P[][][] | null };
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
 function elevationAreas(): Record<string, Record<string, Mat>> {
@@ -43,6 +43,78 @@ function elevCalc(m: Mat): { value: number; calc: CalcRow[]; how: string } {
   calc.sort((a, b) => b.value - a.value);
   const hidden = m.gross - m.net >= 0.05 ? `; önde kalan malzemenin kapattığı ${r2(m.gross - m.net)} m² düşüldü` : '';
   return { value: calc.reduce((s, r) => s + r.value, 0), calc, how: `görünen alan 5 cm ızgarada dikdörtgenlere ayrıldı (taramalar çakışıyor${hidden})` };
+}
+
+/**
+ * Görünüşte ölçülen bir malzemeyi 3B'ye taşır. Plandaki cephe kaplama şeritlerinin (CEPHE KAPLAMA, SOLID) dış yüzleri
+ * hangi görünüşe bakıyorsa o görünüşün malzeme dikdörtgenleri (konumlu) bu yüzlere yatay konumuna göre izdüşürülür.
+ * Kalibrasyon: salon bloğunun görünüşteki (kabuk) ve plandaki (parapet dış yüzü) yatay merkezi; genişlikler 0,6 m içinde. Görünüş z'leri
+ * −0,40 saha kotundan ölçülür (salon kabuk üstleri ve parapetler kesitle karşılaştırıldı).
+ */
+function elevationToModel(A: Record<string, Record<string, Mat>>, mat: string, poz: string, layerLabel: string): number {
+  const flat = flatten(readDxf('work/dxf/4199-A-DD-01-02-100.dxf'));
+  const plate = model3d.find((e) => e.items.includes('A.3'))[0]?.loops?.[0];
+  const hallPts = model3d.find((e) => e.items.includes('B.9')).flatMap((e) => e.path ?? []);
+  if (!plate || !hallPts.length) return 0;
+  const hb = { minX: Math.min(...hallPts.map((p) => p.x)), maxX: Math.max(...hallPts.map((p) => p.x)), minY: Math.min(...hallPts.map((p) => p.y)), maxY: Math.max(...hallPts.map((p) => p.y)) };
+  const Z0 = -0.4;
+  const inPoly = (p: P, poly: P[]) => {
+    let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) if (poly[i].y > p.y !== poly[j].y > p.y && p.x < ((poly[j].x - poly[i].x) * (p.y - poly[i].y)) / (poly[j].y - poly[i].y) + poly[i].x) c = !c;
+    return c;
+  };
+  // görünüş: bakış yönü (cephenin dış normali) ve plan ↔ görünüş yatay eşlemesi (mm)
+  const views = ELEVS.map((e) => {
+    const shell = A[e.key]?.['FM-01 hall shell']?.rects ?? [];
+    const u0 = Math.min(...shell.map((r) => r[2])) * 1000;
+    const u1 = Math.max(...shell.map((r) => r[2] + r[0])) * 1000;
+    const dir = { SE: { x: 0, y: -1 }, NE: { x: 1, y: 0 }, NW: { x: 0, y: 1 }, SW: { x: -1, y: 0 } }[e.key];
+    // plan noktası → görünüş yatay koordinatı (mm)
+    // merkezden hizalama: görünüşteki kabuk, kaplaması nedeniyle plandaki parapet dış yüzünden 0,3–0,4 m geniş
+    const uc = (u0 + u1) / 2;
+    const cx = (hb.minX + hb.maxX) / 2;
+    const cy = (hb.minY + hb.maxY) / 2;
+    const toU = {
+      SE: (p: P) => uc + (p.x - cx),
+      NW: (p: P) => uc + (cx - p.x),
+      NE: (p: P) => uc + (p.y - cy),
+      SW: (p: P) => uc + (cy - p.y),
+    }[e.key];
+    const planW = e.key === 'SE' || e.key === 'NW' ? hb.maxX - hb.minX : hb.maxY - hb.minY;
+    return { e, dir, toU, scaleOk: Math.abs(u1 - u0 - planW) < 600, rects: A[e.key]?.[mat]?.rects ?? [] };
+  });
+  let n = 0;
+  const strips = flat.filter((f) => f.path[0] === 'CEPHE KAPLAMA' && f.t === 'HATCH' && f.pattern === 'SOLID' && f.loops);
+  for (const h of strips)
+    for (const loop of h.loops!)
+      for (let i = 0; i < loop.length; i++) {
+        const a = loop[i];
+        const b = loop[(i + 1) % loop.length];
+        const L = Math.hypot(b.x - a.x, b.y - a.y);
+        if (L < 250) continue;
+        let nx = -(b.y - a.y) / L;
+        let ny = (b.x - a.x) / L;
+        const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        if (inPoly({ x: m.x + nx * 20, y: m.y + ny * 20 }, loop)) ((nx = -nx), (ny = -ny)); // şeridin dışına bakan normal
+        if (inPoly({ x: m.x + nx * 150, y: m.y + ny * 150 }, plate)) continue; // iç yüz (bina içine bakıyor)
+        const v = views.reduce((best, w) => (nx * w.dir.x + ny * w.dir.y > nx * best.dir.x + ny * best.dir.y ? w : best));
+        if (nx * v.dir.x + ny * v.dir.y < 0.3 || !v.scaleOk) continue;
+        const ua = v.toU(a);
+        const ub = v.toU(b);
+        for (const [w, hh, x, z] of v.rects) {
+          const r0 = x * 1000;
+          const r1 = (x + w) * 1000;
+          const lo = Math.max(Math.min(ua, ub), r0);
+          const hi = Math.min(Math.max(ua, ub), r1);
+          if (hi - lo < 10) continue;
+          const t0 = (lo - ua) / (ub - ua);
+          const t1 = (hi - ua) / (ub - ua);
+          const at = (t: number): P => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+          model3d.add({ layer: 'cephe', kind: 'ribbon', items: [poz], lines: { [poz]: `${v.e.name} görünüşü (${v.e.dwg})` }, label: `${layerLabel} – ${v.e.name} cephesi (${(z + Z0).toFixed(2)} → ${(z + hh + Z0).toFixed(2)})`, path: [at(t0), at(t1)], z0: z + Z0, z1: z + hh + Z0 });
+          n++;
+        }
+      }
+  return n;
 }
 
 /** Cam cephe dikmeleri → zincirler → ardışık dikmeler arası mesafeler (gerçek cephe boyunca). */
@@ -178,6 +250,8 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
   });
   fromElev('C.9', 'FM-05', 'Alüminyum panel – servis bloğu üst bandı', ['FM-05 service band'], 'Orta');
   fromElev('C.10', 'FS-01', 'Doğal taş cephe kaplaması (traverten)', ['FS-01 stone'], 'Orta', ['Açılı duvarlarda görünüş izdüşümü gerçek alandan biraz küçüktür.', 'Sistem detayında bu duvar FP-01 TRAVERTEN 30 mm olarak geçiyor (kod çakışması).']);
+  const stone3d = elevationToModel(A, 'FS-01 stone', 'C.10', 'Doğal taş (FS-01)');
+  console.log(`3B doğal taş: ${stone3d} yüzey parçası`);
   fromElev('C.11', 'FP-01', 'Dış cephe sıva + boya (koyu)', ['FP-01 dark plaster (2f3031)'], 'Orta', ['Kuzeydoğu görünüşündeki koyu paneller etiketsiz; aynı renk olduğu için FP-01 sayıldı.']);
   fromElev('C.12', null, 'Kolon kaplaması 0,70 m (kodsuz)', ['COLUMN (unlabelled)'], 'Düşük', ['Görünüşte malzeme kodu yok.']);
   fromElev('C.13', null, 'Kapı kasası / panjur / diğer cephe elemanları (kodsuz)', ['door frames/louvres/misc'], 'Düşük');
