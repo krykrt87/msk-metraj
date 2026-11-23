@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { loadCaller } from './context';
 import {
-  acknowledgeItem, cancelItem, correctItem, createItem, finalizeItem, setItemStatus, unlockItem, updateItemInfo,
+  acknowledgeItem, cancelItem, correctItem, createItem, finalizeItem, restoreItem, setItemStatus, unlockItem, updateItemInfo,
 } from './items';
 import { setMaterialFormula, updateFacadeCell, updateRoom } from './sources';
 import { BASE, D, historyOf, itemOf, P, seedBasic, testDb } from './test/seed';
@@ -92,10 +92,24 @@ describe('kalem ekleme, iptal, bilgi', () => {
     await cancelItem(db, k, { ...base, itemId: 'B.2.1', reason: 'mükerrer' });
     expect((await itemOf(db, 'B.2.1')).cancelled).toBe(true);
   });
+  it('iptal geri alınır; iptal edilmemiş kalemde reddedilir', async () => {
+    const k = await as('kontrol');
+    await cancelItem(db, k, { ...base, itemId: 'B.2.1', reason: 'mükerrer' });
+    await restoreItem(db, k, { ...base, itemId: 'B.2.1', reason: 'yanlışlıkla iptal' });
+    expect((await itemOf(db, 'B.2.1')).cancelled).toBe(false);
+    expect(await historyOf(db)).toContainEqual(expect.objectContaining({ action: 'restore', field: 'cancelled', before: true, after: false, reason: 'yanlışlıkla iptal' }));
+    await expect(restoreItem(db, k, { ...base, itemId: 'B.2.1', reason: 'x' })).rejects.toMatchObject({ code: 'failed-precondition', message: 'Kalem iptal edilmemiş.' });
+  });
   it('bilgi değişikliği kaydedilir', async () => {
     await updateItemInfo(db, await as('kontrol'), { ...base, itemId: 'B.1', name: 'Uzay kafes – izdüşüm', drawings: ['4199-A-DD-02-02-300'] });
     expect(await itemOf(db, 'B.1')).toMatchObject({ name: 'Uzay kafes – izdüşüm', drawings: ['4199-A-DD-02-02-300'] });
     expect(await historyOf(db)).toContainEqual(expect.objectContaining({ action: 'info', field: 'name' }));
+  });
+  it('malzeme özelliği elle girilince işaretlenir', async () => {
+    const specs = [{ label: 'Kalınlık', value: '30 mm', source: '00-09-100' }, { label: 'Renk', value: null }];
+    await updateItemInfo(db, await as('kontrol'), { ...base, itemId: 'B.1', specs });
+    expect(await itemOf(db, 'B.1')).toMatchObject({ specs, specsManual: true });
+    expect(await historyOf(db)).toContainEqual(expect.objectContaining({ action: 'info', field: 'specs' }));
   });
 });
 

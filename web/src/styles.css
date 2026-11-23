@@ -201,6 +201,7 @@ label {
 .shell {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr); /* geniş tablo/uzun ad sayfayı ekrandan taşırmasın */
   height: 100vh;
   height: 100dvh;
 }
@@ -457,7 +458,7 @@ label.check {
 }
 .row {
   display: grid;
-  grid-template-columns: 22px 52px 1fr auto;
+  grid-template-columns: 22px 52px minmax(0, 1fr) auto; /* uzun ad … ile kısalır */
   align-items: baseline;
   gap: 6px;
   width: 100%;
@@ -550,6 +551,51 @@ label.check {
   flex-direction: column;
   gap: 12px;
 }
+.detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border-bottom: 1.5px solid var(--ink);
+  padding-bottom: 8px;
+}
+.detail-title {
+  flex: 1;
+  min-width: 0;
+}
+.info-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.info-btn:hover,
+.info-btn.on {
+  color: var(--stamp);
+  border-color: var(--stamp);
+  background: var(--stamp-soft);
+}
+.info-btn:focus-visible {
+  outline: 2px solid var(--stamp);
+  outline-offset: 1px;
+}
+.item-info {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--stamp);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 10px 12px;
+}
+.info-sources {
+  margin: 0;
+  padding-left: 16px;
+  font-size: var(--fs-1);
+}
 .detail-poz {
   font-family: var(--font-data);
   font-weight: 600;
@@ -557,32 +603,48 @@ label.check {
 }
 .detail-qty {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
-  border-top: 1.5px solid var(--ink);
-  border-bottom: 1px solid var(--rule);
-  padding: 8px 0;
+  white-space: nowrap;
+}
+.qty-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.conf {
+  display: inline-flex;
+}
+.conf rect.off {
+  fill: var(--rule-strong);
+}
+.conf-3 rect.on {
+  fill: var(--ok);
+}
+.conf-2 rect.on {
+  fill: var(--warn);
+}
+.conf-1 rect.on {
+  fill: var(--redline);
 }
 .qty-num {
   font-family: var(--font-data);
-  font-size: 30px;
+  font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 .qty-unit {
   color: var(--ink-2);
   font-size: var(--fs-3);
-  margin-right: auto;
 }
 .qty-none {
   color: var(--warn);
   font-size: var(--fs-4);
-  margin-right: auto;
 }
 .facts {
   display: grid;
   grid-template-columns: 112px 1fr;
+  align-items: baseline; /* etiket ile değer aynı hizada (değer satırında düğme olsa da) */
   gap: 6px 10px;
   margin: 0;
   font-size: var(--fs-2);
@@ -636,6 +698,25 @@ label.check {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+/* proje kodu satırında sağa yaslı; gerekçe formu açılınca satırın tamamını kullanır */
+.code-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.code-row .status-actions {
+  margin-left: auto;
+}
+.code-row .status-actions:has(.action-form) {
+  flex-basis: 100%;
+}
+.btn-row.equal {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr; /* hepsi en genişi kadar */
+  justify-content: end;
 }
 .action-form {
   display: flex;
@@ -911,10 +992,61 @@ label.check {
   font-size: var(--fs-0);
   color: var(--ink-3);
 }
-.v3-layers {
+.v3-side {
   position: absolute;
   top: 10px;
   right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 260px;
+  max-height: calc(100% - 20px);
+}
+.v3-ul-layers summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.v3-ul-all {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0;
+}
+.v3-ul-all button {
+  font: inherit;
+  font-size: var(--fs-0);
+  padding: 1px 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  cursor: pointer;
+}
+.v3-ul-list {
+  max-height: 40vh;
+  overflow: auto;
+  display: grid;
+  gap: 2px;
+}
+.v3-ul-list label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.v3-ul-note {
+  font-size: var(--fs-0);
+  color: var(--ink-2);
+}
+.v3-ul-note.warn {
+  color: var(--warn);
+}
+.v3-id {
+  font-family: var(--font-data);
+  font-weight: 600;
+  padding: 0 4px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  user-select: all;
+}
+.v3-layers {
   margin: 0;
   padding: 6px 10px 8px;
   border: 1px solid var(--rule);
@@ -1003,4 +1135,311 @@ label.check {
   line-height: 1;
   color: var(--ink-2);
   cursor: pointer;
+}
+
+/* --- Malzeme özellikleri */
+.specs-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+table.specs td:first-child {
+  color: var(--ink-2);
+  width: 32%;
+}
+table.specs .spec-source {
+  color: var(--ink-2);
+  font-size: var(--fs-1);
+}
+.spec-missing {
+  color: var(--warn);
+  font-style: italic;
+}
+table.specs input {
+  width: 100%;
+  font: inherit;
+  padding: 3px 5px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+}
+
+/* --- Kalem listesi aç/kapa */
+.list-toggle {
+  position: absolute;
+  top: 10px;
+  right: 8px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: var(--fs-1);
+  padding: 2px 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.list-toggle:hover {
+  color: var(--ink);
+}
+.list-toggle:focus-visible {
+  outline: 2px solid var(--stamp);
+  outline-offset: 1px;
+}
+.list-pane:not(.closed) .filters input[type='search'] {
+  width: calc(100% - 76px); /* aç/kapa düğmesine yer */
+}
+.list-pane.closed {
+  overflow: hidden;
+}
+.list-pane.closed .list-toggle {
+  position: static;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  padding: 10px 0;
+  border: 0;
+  border-radius: 0;
+  justify-content: flex-start;
+}
+.list-toggle-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  margin-top: 6px;
+}
+
+/* --- Malzeme Listesi */
+.malzeme {
+  padding: 16px 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.malzeme-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+.malzeme-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+.malzeme-stats > div {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 4px 12px 6px;
+  min-width: 96px;
+}
+.malzeme-stats > div.warn {
+  border-color: var(--warn);
+  background: #fef6ee;
+}
+.malzeme-stats dt {
+  font-size: var(--fs-0);
+  color: var(--ink-2);
+}
+.malzeme-stats dd {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: var(--fs-4);
+  font-weight: 600;
+}
+.malzeme-stats > div.warn dd {
+  color: var(--warn);
+}
+.malzeme-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.malzeme-filters input[type='search'] {
+  flex: 1 1 220px;
+}
+.malzeme-table {
+  background: var(--panel);
+}
+.malzeme-table .mrow {
+  cursor: pointer;
+}
+.malzeme-table .mrow:hover td {
+  background: #f9faf9;
+}
+.malzeme-table .mrow.open td {
+  background: var(--select);
+}
+.mrow-btn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mrow-detail > td {
+  background: var(--paper);
+  padding: 10px 12px 14px 28px;
+}
+.mrow-link {
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--stamp);
+  font-weight: 600;
+  font-size: var(--fs-1);
+}
+.spec-badge {
+  font-size: var(--fs-1);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.spec-badge.warn {
+  color: var(--warn);
+}
+.spec-badge.ok {
+  color: var(--ok);
+}
+.qty-none-sm {
+  color: var(--warn);
+  font-style: italic;
+}
+
+/* --- Telefon: metraj tek sütun (liste ↔ bilgi kartı), menü yatay kaydırılır */
+.pane[hidden] {
+  display: none;
+}
+.back-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.back-btn span {
+  font-size: 20px;
+  line-height: 1;
+  color: var(--stamp);
+}
+@media (max-width: 760px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    padding: 6px 12px 0;
+  }
+  .title-block {
+    max-width: 100%;
+  }
+  .tb-cell {
+    padding: 2px 6px 3px;
+  }
+  .userbox {
+    margin-left: auto;
+  }
+  .user-role {
+    display: none;
+  }
+  .mainnav {
+    order: 3;
+    flex: 1 0 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 -12px;
+    padding: 0 6px;
+  }
+  .mainnav a {
+    white-space: nowrap;
+    padding: 8px 10px;
+  }
+  .metraj.mobile {
+    display: flex;
+    flex-direction: column;
+  }
+  .metraj.mobile > .pane {
+    flex: 1;
+    border: 0;
+  }
+  .row {
+    padding: 9px 12px; /* dokunma hedefi */
+  }
+  .filters input,
+  .filters select {
+    font-size: 16px; /* iOS odaklanınca yakınlaştırmasın */
+  }
+  .detail {
+    padding: 12px;
+  }
+  .detail-head {
+    flex-wrap: wrap;
+  }
+  .detail-qty {
+    order: 3;
+    flex-basis: 100%;
+  }
+  .facts {
+    grid-template-columns: 96px 1fr;
+  }
+  .tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs button {
+    white-space: nowrap;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .tab-body {
+    overflow-x: auto; /* geniş cetvel tabloları kart içinde yatay kayar */
+  }
+  table.specs td:first-child {
+    width: auto;
+  }
+  table.specs input,
+  .action-form textarea {
+    font-size: 16px;
+  }
+  .malzeme {
+    padding: 12px 12px 24px;
+  }
+  .malzeme-stats > div {
+    flex: 1 1 40%;
+    min-width: 0;
+  }
+  .malzeme-filters input,
+  .malzeme-filters select {
+    font-size: 16px;
+    flex: 1 1 100%;
+  }
+  .malzeme-table .col-code {
+    display: none;
+  }
+  .malzeme-table td,
+  .malzeme-table th {
+    padding: 8px 5px;
+  }
+  .mrow-detail > td {
+    padding: 8px;
+    overflow-x: auto;
+    max-width: 0; /* geniş özellik tablosu satırı değil kendini kaydırsın */
+  }
 }

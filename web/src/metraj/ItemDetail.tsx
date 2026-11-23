@@ -5,16 +5,32 @@ import type { FacadeRow, Item, Room, UserProfile } from '@shared/types';
 import { api } from '../data/api';
 import { useHistory } from '../data/hooks';
 import { formatDateTime } from '../data/types';
-import { Collapsible } from '../common/Collapsible';
 import { Breakdown } from './Breakdown';
 import { CorrectionForm } from './CorrectionForm';
 import { isUnmeasurable } from './filter';
 import { FormulaForm } from './FormulaForm';
 import { HistoryList } from './HistoryList';
+import { Specs } from './Specs';
 import { StatusActions } from './StatusActions';
 import { StatusIcon } from './StatusIcon';
 
-type Tab = 'hesap' | 'gecmis' | 'duzelt' | 'formul';
+type Tab = 'hesap' | 'ozellik' | 'gecmis' | 'duzelt' | 'formul';
+
+const CONF_BARS = { Yüksek: 3, Orta: 2, Düşük: 1 } as const;
+/** Ölçüm güveni: üç çubuktan dolu olanlar (Yüksek 3, Orta 2, Düşük 1). */
+function ConfidenceIcon({ level }: { level: Item['confidence'] }) {
+  const n = level ? CONF_BARS[level] : 0;
+  const text = `Güven: ${level ?? 'belirtilmemiş'}`;
+  return (
+    <span className={`conf conf-${n}`} title={text} role="img" aria-label={text}>
+      <svg viewBox="0 0 14 12" width="16" height="14" aria-hidden="true">
+        {[0, 1, 2].map((i) => (
+          <rect key={i} x={i * 5} y={8 - i * 4} width="3.5" height={4 + i * 4} rx="0.5" className={i < n ? 'on' : 'off'} />
+        ))}
+      </svg>
+    </span>
+  );
+}
 
 export function ItemDetail({
   item,
@@ -23,8 +39,10 @@ export function ItemDetail({
   rooms,
   facade,
   focusLine,
+  focusRef,
   linkedLines,
   onLineClick,
+  onRowClick,
 }: {
   item: Item;
   profile: UserProfile;
@@ -33,62 +51,108 @@ export function ItemDetail({
   facade: FacadeRow[];
   /** 3B'de tıklanan elemanın hesap detayı satırı (ad ya da sıra). */
   focusLine?: string | number | null;
+  /** Odaktaki 3B eleman (ör. CEP-142); kendi cetvel satırı vurgulanır. */
+  focusRef?: string;
   /** 3B modelde karşılığı olan satırlar (tıklanınca modelde gösterilir). */
   linkedLines?: Set<number>;
   onLineClick?: (index: number) => void;
+  onRowClick?: (line: number, ref: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>('hesap');
+  const [info, setInfo] = useState(false);
   useEffect(() => {
     if (focusLine !== null && focusLine !== undefined) setTab('hesap');
   }, [focusLine]);
   const history = useHistory({ type: 'item', id: item.id });
   const editable = can(profile, 'edit') && item.status !== 'kesinlesti' && !item.cancelled;
   const differsFromExcel = item.importedValue !== null && item.value !== null && Math.abs(item.importedValue - item.value) > 1e-9;
-  const tabs: [Tab, string][] = [['hesap', 'Hesap detayı'], ['gecmis', 'Geçmiş']];
+  const tabs: [Tab, string][] = [['hesap', 'Hesap detayı'], ['ozellik', 'Malzeme özellikleri'], ['gecmis', 'Geçmiş']];
   if (editable) tabs.push(['duzelt', 'Miktarı düzelt'], ['formul', 'Formül']);
   const active = tabs.some(([t]) => t === tab) ? tab : 'hesap';
 
   return (
     <article className="detail">
       <header className="detail-head">
-        <div className="detail-poz">{item.poz}</div>
-        <h2>{item.name}</h2>
+        <div className="detail-title">
+          <div className="detail-poz">{item.poz}</div>
+          <h2>{item.name}</h2>
+        </div>
+        <div className="detail-qty">
+          {isUnmeasurable(item) ? (
+            <span className="qty-none">Ölçülemedi</span>
+          ) : (
+            <span>
+              <span className="qty-num">{formatTr(item.value, item.unit)}</span> <span className="qty-unit">{item.unit}</span>
+            </span>
+          )}
+          <span className="qty-icons">
+            <StatusIcon item={item} />
+            <ConfidenceIcon level={item.confidence} />
+          </span>
+        </div>
+        <button type="button" className={`info-btn${info ? ' on' : ''}`} aria-expanded={info} aria-controls="item-info" title="Tür, hesap yöntemi ve kaynaklar" onClick={() => setInfo((v) => !v)}>
+          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+            <circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M10 9v5M10 6.2v.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+          <span className="sr-only">Kalem bilgisi</span>
+        </button>
       </header>
-      <div className="detail-qty">
-        {isUnmeasurable(item) ? (
-          <span className="qty-none">Ölçülemedi</span>
-        ) : (
-          <>
-            <span className="qty-num">{formatTr(item.value, item.unit)}</span> <span className="qty-unit">{item.unit}</span>
-          </>
-        )}
-        <StatusIcon item={item} withLabel />
-      </div>
+      {info && (
+        <section id="item-info" className="item-info" aria-label="Kalem bilgisi">
+          <dl className="facts">
+            <dt>Tür</dt>
+            <dd>{item.kind === 'derived' ? 'Türetilen' : 'Ölçülen'}</dd>
+            <dt>Hesap yöntemi</dt>
+            <dd>{item.method}</dd>
+            <dt>Kaynak pafta</dt>
+            <dd>
+              {item.drawings.length > 0 ? (
+                <div className="chips">
+                  {item.drawings.map((d) => (
+                    <span key={d} className="chip">
+                      {d.replace('4199-A-DD-', '')}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                '—'
+              )}
+            </dd>
+            <dt>Son değişiklik</dt>
+            <dd>
+              {item.updatedBy?.name ?? '—'}, {formatDateTime(item.updatedAt)}
+            </dd>
+            <dt>Kaynak</dt>
+            <dd>
+              {item.sources?.length ? (
+                <ul className="info-sources">
+                  {item.sources.map((s, i) => (
+                    <li key={i}>
+                      <span className="mono">{s.drawing}</span> · {s.where}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                item.sourceText || '—'
+              )}
+            </dd>
+          </dl>
+        </section>
+      )}
       {item.cancelled && <p className="note warn">Bu kalem iptal edildi; geçmişiyle saklanıyor.</p>}
       <dl className="facts">
-        <dt>Tür</dt>
-        <dd>{item.kind === 'derived' ? 'Türetilen' : 'Ölçülen'}</dd>
         {item.formula && (
           <>
             <dt>Formül</dt>
             <dd className="mono">{item.formula}</dd>
           </>
         )}
-        {item.code && (
-          <>
-            <dt>Proje kodu</dt>
-            <dd>{item.code}</dd>
-          </>
-        )}
-        <dt>Hesap yöntemi</dt>
-        <dd><Collapsible key={`m-${item.id}`} text={item.method} /></dd>
-        <dt>Kaynak pafta</dt>
-        <dd>
-          <Collapsible key={`s-${item.id}`} text={item.sourceText} />
-          {item.drawings.length > 0 && <div className="chips">{item.drawings.map((d) => <span key={d} className="chip">{d.replace('4199-A-DD-', '')}</span>)}</div>}
+        <dt>Proje kodu</dt>
+        <dd className="code-row">
+          <span>{item.code ?? '—'}</span>
+          <StatusActions item={item} profile={profile} api={api} />
         </dd>
-        <dt>Güven</dt>
-        <dd>{item.confidence ?? '—'}</dd>
         {differsFromExcel && (
           <>
             <dt>İlk ölçüm (DWG)</dt>
@@ -97,12 +161,7 @@ export function ItemDetail({
             </dd>
           </>
         )}
-        <dt>Son değişiklik</dt>
-        <dd>
-          {item.updatedBy?.name ?? '—'}, {formatDateTime(item.updatedAt)}
-        </dd>
       </dl>
-      <StatusActions item={item} profile={profile} api={api} />
       <div className="tabs" role="tablist">
         {tabs.map(([t, label]) => (
           <button key={t} type="button" role="tab" aria-selected={active === t} className={active === t ? 'active' : undefined} onClick={() => setTab(t)}>
@@ -111,7 +170,8 @@ export function ItemDetail({
         ))}
       </div>
       <div className="tab-body">
-        {active === 'hesap' && <Breakdown item={item} focus={focusLine} linked={linkedLines} onLineClick={onLineClick} />}
+        {active === 'hesap' && <Breakdown item={item} focus={focusLine} focusRef={focusRef} linked={linkedLines} onLineClick={onLineClick} onRowClick={onRowClick} />}
+        {active === 'ozellik' && <Specs key={item.id} item={item} editable={editable} submit={api.updateItemInfo} />}
         {active === 'gecmis' && <HistoryList entries={history.data} unit={item.unit} />}
         {active === 'duzelt' && <CorrectionForm key={item.id} item={item} submit={api.correctItem} onDone={() => setTab('gecmis')} />}
         {active === 'formul' && (

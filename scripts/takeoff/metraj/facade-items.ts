@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs';
 import { decomposeRegion, mergeRows, type CalcRow } from '../lib/decompose';
 import type { P } from '../lib/geom';
 import type { Line, TakeoffItem } from './model';
+import { formatTr } from '../../../shared/number';
 import { model3d } from './model3d';
 import { roomsAlong, roomsNear, sideOf } from './rooms-index';
 
@@ -26,7 +27,7 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 const MAT_TR: Record<string, string> = {
   'FG-01 glass': 'FG-01 cam',
   'FG-01? slot glazing (unlabelled)': 'taş arası dar cam (etiketsiz)',
-  'FS-01 stone': 'FS-01 doğal taş',
+  'FS-01 stone': 'FP-01 traverten (görünüşte FS-01)',
   'FM-01 hall shell': 'FM-01 salon kabuğu',
   'FM-04 rear shell (visible part)': 'FM-04 kabuk arka yüzü (görünen kısım)',
   'shell misc (unlabelled)': 'kabuk – diğer parçalar (etiketsiz)',
@@ -70,11 +71,38 @@ function elevCalc(m: Mat): { value: number; calc: CalcRow[]; how: string } {
  * Kalibrasyon: salon bloğunun görünüşteki (kabuk) ve plandaki (parapet dış yüzü) yatay merkezi; genişlikler 0,6 m içinde. Görünüş z'leri
  * −0,40 saha kotundan ölçülür (salon kabuk üstleri ve parapetler kesitle karşılaştırıldı).
  */
-function elevationToModel(A: Record<string, Record<string, Mat>>, mat: string, poz: string, layerLabel: string): number {
+/**
+ * Görünüşte taş görünen ama gerçekte başka bir yüzeyin önünde/arkasında kalan şerit kenarları (proje ekibi bildirimi,
+ * 2026-11-22). Görünüş → plan eşlemesi derinliğe ve yüzey yüksekliğine bakmadığı için taş bu kenarlara da kopyalanıyordu;
+ * aynı taş, öndeki/yüksek duvarda zaten modelde (CEP-202 Küçük Salon 01 eğik duvarı, CEP-179 kuzeydoğu kanadı). Nokta: kenar üstünde, mm.
+ * shortcut: elle liste; görünüşte başka yanlış kopya bulunursa buraya eklenir, çok olursa yüzey yükseklikli gizli yüzey ayıklaması gerekir.
+ */
+const NOT_STONE: P[] = [
+  { x: 639472, y: 6023901 }, // mutfak batı yüzü (GB görünüşünde Küçük Salon 01 önde)
+  { x: 674672, y: 6023451 }, // depo/teknik alan arası girinti yüzü (GB görünüşünde arkada)
+  { x: 715522, y: 6025676 }, // kuzey kanadın alçak ön yüzü (KB görünüşünde +3,95 üstü arkadaki duvar)
+  { x: 718222, y: 6025676 },
+];
+/** Planda cephe kaplama şeridi çizilmemiş (kapı/cam açıklığı) ama görünüşte üstünde taş olan cephe yüzleri: dış yüz çizgisi, mm. */
+const NO_STRIP_FACES: { a: P; b: P }[] = [
+  { a: { x: 637372, y: 6022128 }, b: { x: 639472, y: 6022128 } }, // Küçük Salon 01 – mutfak arası kapı yüzü (DON-56), KB görünüşü
+];
+const distToSeg = (p: P, a: P, b: P) => {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y);
+};
+
+const kot = (z: number) => `${z < 0 ? '−' : '+'}${Math.abs(z).toFixed(2).replace('.', ',')}`;
+const m3f = (mm: number) => (mm / 1000).toFixed(2).replace('.', ',');
+/** Görünüş başına: 3B yüzey satırları (CEP), görünüşte olup modelde yeri bulunamayan parçalar, iki yüzeye yerleşen alan (m², izdüşüm). */
+type StoneView = { rows: CalcRow[]; missing: CalcRow[]; overlap: number };
+
+function elevationToModel(A: Record<string, Record<string, Mat>>, mat: string, poz: string, layerLabel: string): Record<string, StoneView> {
   const flat = flatten(readDxf('work/dxf/4199-A-DD-01-02-100.dxf'));
   const plate = model3d.find((e) => e.items.includes('A.3'))[0]?.loops?.[0];
-  const hallPts = model3d.find((e) => e.items.includes('B.9')).flatMap((e) => e.path ?? []);
-  if (!plate || !hallPts.length) return 0;
+  const hallPts = model3d.find((e) => e.items.includes('B.9')).flatMap((e) => e.path ?? e.faces?.flat() ?? []);
+  if (!plate || !hallPts.length) return {};
   const hb = { minX: Math.min(...hallPts.map((p) => p.x)), maxX: Math.max(...hallPts.map((p) => p.x)), minY: Math.min(...hallPts.map((p) => p.y)), maxY: Math.max(...hallPts.map((p) => p.y)) };
   const Z0 = -0.4;
   const inPoly = (p: P, poly: P[]) => {
@@ -99,11 +127,29 @@ function elevationToModel(A: Record<string, Record<string, Mat>>, mat: string, p
       NE: (p: P) => uc + (p.y - cy),
       SW: (p: P) => uc + (cy - p.y),
     }[e.key];
+    // görünüş yatay koordinatı → plandaki bakış hattı üstünde bir nokta (toU'nun tersi; derinlik 0)
+    const fromU = {
+      SE: (u: number): P => ({ x: u - uc + cx, y: 0 }),
+      NW: (u: number): P => ({ x: uc + cx - u, y: 0 }),
+      NE: (u: number): P => ({ x: 0, y: u - uc + cy }),
+      SW: (u: number): P => ({ x: 0, y: uc + cy - u }),
+    }[e.key];
     const planW = e.key === 'SE' || e.key === 'NW' ? hb.maxX - hb.minX : hb.maxY - hb.minY;
-    return { e, dir, toU, scaleOk: Math.abs(u1 - u0 - planW) < 600, rects: A[e.key]?.[mat]?.rects ?? [] };
+    return { e, dir, toU, fromU, scaleOk: Math.abs(u1 - u0 - planW) < 600, rects: A[e.key]?.[mat]?.rects ?? [] };
   });
-  let n = 0;
+  const out: Record<string, StoneView> = {};
+  const viewOf = (k: string) => (out[k] ??= { rows: [], missing: [], overlap: 0 });
+  // "görünüş:dikdörtgen" → yerleşen yatay aralıklar; row yoksa yüz bu görünüşte ikincil (alanı başka görünüşten sayıldı)
+  const pieces = new Map<string, { lo: number; hi: number; row?: CalcRow }[]>();
+  const addPiece = (key: string, piece: { lo: number; hi: number; row?: CalcRow }) => pieces.set(key, [...(pieces.get(key) ?? []), piece]);
   const strips = flat.filter((f) => f.path[0] === 'CEPHE KAPLAMA' && f.t === 'HATCH' && f.pattern === 'SOLID' && f.loops);
+  const faces: { a: P; b: P; nx: number; ny: number }[] = [];
+  for (const { a, b } of NO_STRIP_FACES) {
+    const L = Math.hypot(b.x - a.x, b.y - a.y);
+    const [nx, ny] = [-(b.y - a.y) / L, (b.x - a.x) / L];
+    const out = !inPoly({ x: (a.x + b.x) / 2 + nx * 150, y: (a.y + b.y) / 2 + ny * 150 }, plate);
+    faces.push({ a, b, nx: out ? nx : -nx, ny: out ? ny : -ny });
+  }
   for (const h of strips)
     for (const loop of h.loops!)
       for (let i = 0; i < loop.length; i++) {
@@ -116,25 +162,133 @@ function elevationToModel(A: Record<string, Record<string, Mat>>, mat: string, p
         const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
         if (inPoly({ x: m.x + nx * 20, y: m.y + ny * 20 }, loop)) ((nx = -nx), (ny = -ny)); // şeridin dışına bakan normal
         if (inPoly({ x: m.x + nx * 150, y: m.y + ny * 150 }, plate)) continue; // iç yüz (bina içine bakıyor)
-        const v = views.reduce((best, w) => (nx * w.dir.x + ny * w.dir.y > nx * best.dir.x + ny * best.dir.y ? w : best));
-        if (nx * v.dir.x + ny * v.dir.y < 0.3 || !v.scaleOk) continue;
-        const ua = v.toU(a);
-        const ub = v.toU(b);
-        for (const [w, hh, x, z] of v.rects) {
-          const r0 = x * 1000;
-          const r1 = (x + w) * 1000;
-          const lo = Math.max(Math.min(ua, ub), r0);
-          const hi = Math.min(Math.max(ua, ub), r1);
-          if (hi - lo < 10) continue;
-          const t0 = (lo - ua) / (ub - ua);
-          const t1 = (hi - ua) / (ub - ua);
-          const at = (t: number): P => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
-          model3d.add({ layer: 'cephe', kind: 'ribbon', items: [poz], lines: { [poz]: `${v.e.name} görünüşü (${v.e.dwg})` }, label: `${layerLabel} – ${v.e.name} cephesi (${(z + Z0).toFixed(2)} → ${(z + hh + Z0).toFixed(2)})`, path: [at(t0), at(t1)], z0: z + Z0, z1: z + hh + Z0 });
-          n++;
-        }
+        if (NOT_STONE.some((p) => distToSeg(p, a, b) < 100)) continue;
+        faces.push({ a, b, nx, ny });
       }
-  return n;
+  for (const { a, b, nx, ny } of faces) {
+    const facing = (w: (typeof views)[number]) => nx * w.dir.x + ny * w.dir.y;
+    const v = views.reduce((best, w) => (facing(w) > facing(best) ? w : best));
+    if (facing(v) < 0.3 || !v.scaleOk) continue;
+    // eğik yüz ikinci görünüşte de görünür: oradaki taş bu yüzün (aynı fiziksel alan) — örtülü sayılır, alan eklenmez
+    for (const w of views) {
+      if (w === v || facing(w) < 0.3 || !w.scaleOk) continue;
+      const [wa, wb] = [w.toU(a), w.toU(b)];
+      w.rects.forEach(([rw, , rx], k) => {
+        const lo = Math.max(Math.min(wa, wb), rx * 1000);
+        const hi = Math.min(Math.max(wa, wb), (rx + rw) * 1000);
+        if (hi - lo >= 10) addPiece(`${w.e.key}:${k}`, { lo, hi });
+      });
+    }
+    const ua = v.toU(a);
+    const ub = v.toU(b);
+    v.rects.forEach(([w, hh, x, z], k) => {
+      const r0 = x * 1000;
+      const r1 = (x + w) * 1000;
+      const lo = Math.max(Math.min(ua, ub), r0);
+      const hi = Math.min(Math.max(ua, ub), r1);
+      if (hi - lo < 10) return;
+      const at = (t: number): P => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      const [p0, p1] = [at((lo - ua) / (ub - ua)), at((hi - ua) / (ub - ua))];
+      const en = Math.round(Math.hypot(p1.x - p0.x, p1.y - p0.y)) / 1000;
+      const boy = Math.round(hh * 1000) / 1000;
+      const room = roomsNear({ x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 }, 3000)[0]?.label;
+      const row: CalcRow = { kind: 'dikdörtgen', label: 'taş yüzeyi', name: `${room ? room + ' dış yüzü' : 'dış yüz'}, ${kot(z + Z0)} → ${kot(z + hh + Z0)}`, adet: 1, en, boy, sign: 1, value: en * boy };
+      model3d.add({ layer: 'cephe', kind: 'ribbon', items: [poz], lines: { [poz]: `${v.e.name} görünüşü (${v.e.dwg})` }, row, label: `${layerLabel} – ${v.e.name} cephesi (${(z + Z0).toFixed(2)} → ${(z + hh + Z0).toFixed(2)})`, path: [p0, p1], z0: z + Z0, z1: z + hh + Z0 });
+      viewOf(v.e.key).rows.push(row);
+      addPiece(`${v.e.key}:${k}`, { lo, hi, row });
+    });
+  }
+  /** Görünüşteki u konumunda bakana en yakın bina dış yüzünün hemen içindeki mahal (kat genel sınırıyla kesişim). */
+  const roomAtU = (v: (typeof views)[number], u: number): string | undefined => {
+    const o = v.fromU(u);
+    const d = v.dir;
+    let best = -Infinity;
+    for (let i = 0; i < plate.length; i++) {
+      const p = plate[i];
+      const q = plate[(i + 1) % plate.length];
+      const ex = q.x - p.x;
+      const ey = q.y - p.y;
+      const den = d.x * ey - d.y * ex;
+      if (Math.abs(den) < 1e-9) continue;
+      const t = ((p.x - o.x) * ey - (p.y - o.y) * ex) / den; // bakış hattı boyunca derinlik
+      const sg = ((p.x - o.x) * d.y - (p.y - o.y) * d.x) / den; // kenar üstündeki konum
+      if (sg >= 0 && sg <= 1 && t > best) best = t;
+    }
+    if (best === -Infinity) return undefined;
+    return roomsNear({ x: o.x + d.x * (best - 600), y: o.y + d.y * (best - 600) }, 4000)[0]?.label;
+  };
+  // görünüşle karşılaştırma: her görünüş dikdörtgeni yüzeylerce tam bir kez örtülmeli
+  const clash = new Set<CalcRow>();
+  for (const v of views)
+    v.rects.forEach(([w, hh, x, z], k) => {
+      const o = viewOf(v.e.key);
+      const gap = (g0: number, g1: number) => {
+        if (g1 - g0 < 10) return;
+        const en = Math.round(g1 - g0) / 1000;
+        const boy = Math.round(hh * 1000) / 1000;
+        const room = roomAtU(v, (g0 + g1) / 2);
+        o.missing.push({ kind: 'dikdörtgen', label: 'görünüş parçası', name: `${room ? room + ' önü' : 'mahal bulunamadı'}, ${kot(z + Z0)} → ${kot(z + hh + Z0)} (görünüşte x ${m3f(g0)}–${m3f(g1)} m)`, adet: 1, en, boy, sign: 1, value: en * boy });
+      };
+      let cur = x * 1000;
+      let last: { row?: CalcRow } | null = null;
+      for (const p of (pieces.get(`${v.e.key}:${k}`) ?? []).sort((p, q) => p.lo - q.lo)) {
+        if (last && p.lo < cur - 10) {
+          // iki yüz de alan veriyorsa aynı görünüş alanı iki kez sayıldı
+          if (p.row && last.row) ((o.overlap += ((Math.min(p.hi, cur) - p.lo) / 1000) * hh), clash.add(p.row).add(last.row));
+        } else gap(cur, p.lo);
+        if (p.hi > cur) ((cur = p.hi), (last = p));
+      }
+      gap(cur, (x + w) * 1000);
+    });
+  for (const r of clash) r.name += ' ⚠ görünüşte başka yüzeyle çakışıyor';
+  return out;
 }
+
+/**
+ * Görünüşte cam cephenin arkasında kalan, taş kaplı dış duvarlar (proje ekibinin bildirimi, 2026-11-22): küçük salonların
+ * güneye bakan dış duvarları. Duvar, plandaki A_Patt_Wall parçası (ağırlık merkezi, mm) ile seçilir; taş, parçanın bina dışına
+ * bakan uzun yüzüne ±0,00'dan saçak altına (+5,90) ya da duvar üstüne (+7,10) kadar konur.
+ */
+const HIDDEN_STONE_WALLS = [
+  { at: { x: 611827, y: 6007953 }, z1: 7.1, where: 'açıkta, duvar üstüne kadar' },
+  { at: { x: 619787, y: 5996631 }, z1: 5.9, where: 'saçak altı, saçak altı kotuna kadar' },
+  { at: { x: 626948, y: 5997611 }, z1: 5.9, where: 'saçak altı, saçak altı kotuna kadar' },
+];
+function hiddenStoneWalls(poz: string, lineLabel: string): Line | null {
+  const plate = model3d.find((e) => e.items.includes('A.3'))[0]?.loops?.[0];
+  if (!plate) return null;
+  const walls = model3d.find((e) => e.layer === 'duvar' && e.kind === 'prism' && !!e.loops);
+  const centroid = (l: P[]) => ({ x: l.reduce((s, p) => s + p.x, 0) / l.length, y: l.reduce((s, p) => s + p.y, 0) / l.length });
+  const calc: CalcRow[] = [];
+  for (const w of HIDDEN_STONE_WALLS) {
+    const wall = walls.find((e) => Math.hypot(centroid(e.loops![0]).x - w.at.x, centroid(e.loops![0]).y - w.at.y) < 200);
+    if (!wall) throw new Error(`Taş kaplı duvar planda bulunamadı (${w.at.x}, ${w.at.y})`);
+    const l = wall.loops![0];
+    // dış yüz: uzun kenarlardan, normali bina dışına (kat genel sınırının dışına) bakan
+    const face = l
+      .map((a, i) => ({ a, b: l[(i + 1) % l.length] }))
+      .filter(({ a, b }) => Math.hypot(b.x - a.x, b.y - a.y) > 1000)
+      .find(({ a, b }) => {
+        const c = centroid(l);
+        const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const d = Math.hypot(m.x - c.x, m.y - c.y);
+        return !inPolygon({ x: m.x + ((m.x - c.x) / d) * 500, y: m.y + ((m.y - c.y) / d) * 500 }, plate);
+      });
+    if (!face) throw new Error(`Taş kaplı duvarın dış yüzü bulunamadı (${w.at.x}, ${w.at.y})`);
+    const en = Math.round(Math.hypot(face.b.x - face.a.x, face.b.y - face.a.y)) / 1000;
+    const room = roomsNear(centroid(l), 3000)[0]?.label ?? 'mahal bulunamadı';
+    const row: CalcRow = { kind: 'dikdörtgen', label: `${room} dış duvarı (${w.where})`, name: `${room} dış duvarı, ±0,00 → ${kot(w.z1)} (${w.where})`, adet: 1, en, boy: w.z1, sign: 1, value: en * w.z1 };
+    model3d.add({ layer: 'cephe', kind: 'ribbon', items: [poz], lines: { [poz]: lineLabel }, row, label: `Traverten (FP-01) – ${room} dış duvarı (±0,00 → +${w.z1.toFixed(2).replace('.', ',')})`, path: [face.a, face.b], z0: 0, z1: w.z1 });
+    calc.push(row);
+  }
+  return { label: lineLabel, value: r2(calc.reduce((s, r) => s + r.value, 0)), unit: 'm²', note: 'görünüşte cam cephenin arkasında kaldığı için görünüş ölçümünde yok; plandaki duvar dış yüzü uzunluğu × yükseklik (proje ekibi bildirimi)', calc };
+}
+
+const inPolygon = (p: P, poly: P[]) => {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) if (poly[i].y > p.y !== poly[j].y > p.y && p.x < ((poly[j].x - poly[i].x) * (p.y - poly[i].y)) / (poly[j].y - poly[i].y) + poly[i].x) c = !c;
+  return c;
+};
 
 /** Cam cephe dikmeleri → zincirler → ardışık dikmeler arası mesafeler (gerçek cephe boyunca). */
 export function glassChains(): { chains: { pts: P[]; bays: number[] }[] } {
@@ -270,9 +424,37 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
     notes: ['Salonlar arasındaki 0,80 m derzlere bakan yüzler görünüşlerde görünmediği için dahil değildir; bu yüzler sistem malzemesi için ayrıca hesaplanmalı.'],
   });
   fromElev('C.9', 'FM-05', 'Alüminyum panel – servis bloğu üst bandı', ['FM-05 service band'], 'Orta');
-  fromElev('C.10', 'FS-01', 'Doğal taş cephe kaplaması (traverten)', ['FS-01 stone'], 'Orta', ['Açılı duvarlarda görünüş izdüşümü gerçek alandan biraz küçüktür.', 'Sistem detayında bu duvar FP-01 TRAVERTEN 30 mm olarak geçiyor (kod çakışması).']);
-  const stone3d = elevationToModel(A, 'FS-01 stone', 'C.10', 'Doğal taş (FS-01)');
-  console.log(`3B doğal taş: ${stone3d} yüzey parçası`);
+  // C.10: hesap = 3B model (her CEP yüzeyi bir satır); görünüş kontrol. Görünüşte olup yüzeyi bulunamayan taş ayrı satırda toplama katılır.
+  const elevStone = elevLines('FS-01 stone');
+  const stone = elevationToModel(A, 'FS-01 stone', 'C.10', 'Traverten (FP-01)');
+  const rowSum = (rs: CalcRow[]) => r2(rs.reduce((s, r) => s + r.value, 0));
+  const c10Lines: Line[] = ELEVS.flatMap((e) => {
+    const s = stone[e.key];
+    if (!s) return [];
+    const label = `${e.name} görünüşü (${e.dwg})`;
+    const ev = elevStone.find((l) => l.label === label)?.value ?? 0;
+    const ls: Line[] = [];
+    if (s.rows.length) ls.push({ label, value: rowSum(s.rows), unit: 'm²', note: `3B taş yüzeyleri: plandaki gerçek uzunluk × görünüşteki yükseklik. Görünüş ölçümü ${formatTr(ev)} m² (izdüşüm).${s.overlap >= 0.05 ? ` ⚠ ${formatTr(r2(s.overlap))} m² görünüş alanı iki yüzeye yerleşti (çakışan satırlar işaretli).` : ''}`, calc: s.rows });
+    if (s.missing.length) ls.push({ label: `${e.name} görünüşü – modelde yeri bulunamayan taş`, value: rowSum(s.missing), unit: 'm²', note: 'Görünüşte taş var, plandaki cephe kaplama şeritlerinde karşılığı yok; görünüş izdüşüm alanı toplama katıldı. 3B modelde görünmez.', calc: s.missing });
+    return ls;
+  });
+  const hiddenStone = hiddenStoneWalls('C.10', 'Güneydoğu görünüşünde cam arkasında kalan küçük salon dış duvarları');
+  if (hiddenStone) c10Lines.push(hiddenStone);
+  const missingA = r2(Object.values(stone).reduce((s, v) => s + rowSum(v.missing), 0));
+  const overlapA = r2(Object.values(stone).reduce((s, v) => s + v.overlap, 0));
+  console.log(`3B traverten: ${Object.values(stone).reduce((s, v) => s + v.rows.length, 0)} yüzey, yeri bulunamayan ${missingA} m², çakışan ${overlapA} m²`);
+  items.push({
+    poz: 'C.10', group: 'C', code: 'FP-01', name: 'Traverten cephe kaplaması (30 mm)', unit: 'm²', value: sum(c10Lines),
+    method: 'Görünüşlerdeki FS-01 taş taramaları, zemin kat planındaki cephe kaplama şeritlerinin (CEPHE KAPLAMA) o görünüşe bakan dış yüzlerine yatay konumlarına göre yerleştirildi; her yüzey 3B modelde bir CEP elemanı ve cetvelde bir satırdır (plandaki gerçek uzunluk × görünüşteki yükseklik). Görünüş taraması her yüzeyde tam bir kez kullanılmalı: görünüşte olup yüzeyi bulunamayan taş ayrı satırda izdüşüm alanıyla toplama katıldı, iki yüzeye yerleşen görünüş alanı satırda işaretlendi. Görünüşte cam arkasında kalan duvarlar proje ekibi bildirimiyle eklendi.',
+    sources: [{ drawing: '4199-A-DD-01-02-100', where: 'katman CEPHE KAPLAMA (SOLID taramalar) · dış yüzler' }, { drawing: '4199-A-DD-00-09-100', where: 'FP-01 TRAVERTEN etiketleri · katman A_Mat_Stne (kesit B ve detay planı, kalınlık 30 mm)' }, ...elevSources],
+    confidence: 'Orta',
+    lines: c10Lines,
+    notes: [
+      ...(missingA > 0 ? [`Görünüşte olup modelde yeri bulunamayan ${formatTr(missingA)} m² taş var (ilgili satırlar). Yeri belirlenince model ve hesap birlikte düzelir.`] : []),
+      ...(overlapA > 0 ? [`${formatTr(overlapA)} m² görünüş alanı iki ayrı yüzeye yerleşti (⚠ işaretli satırlar); biri yanlışsa bildirin.`] : []),
+      'Kod ve kalınlık sistem detayından (4199-A-DD-00-09-100): FP-01 TRAVERTEN; kaplama kalınlığı 30 mm (kesit B ve detay planındaki A_Mat_Stne taş katmanından ölçüldü, yazıyla verilmemiş). Görünüşlerde aynı taş FS-01 etiketli.',
+    ],
+  });
   fromElev('C.11', 'FP-01', 'Dış cephe sıva + boya (koyu)', ['FP-01 dark plaster (2f3031)'], 'Orta', ['Kuzeydoğu görünüşündeki koyu paneller etiketsiz; aynı renk olduğu için FP-01 sayıldı.']);
   fromElev('C.12', null, 'Kolon kaplaması 0,70 m (kodsuz)', ['COLUMN (unlabelled)'], 'Düşük', ['Görünüşte malzeme kodu yok.']);
   fromElev('C.13', null, 'Kapı kasası / panjur / diğer cephe elemanları (kodsuz)', ['door frames/louvres/misc'], 'Düşük');
@@ -296,7 +478,7 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
     });
   }
   findings.push(
-    { topic: 'Cephe – kod çakışması', drawings: '00-09-100, görünüşler', finding: 'FM-01 hem salon kabuğu hem saçak üst bandı için kullanılmış; FP-01 detayda TRAVERTEN, görünüşte SIVA+BOYA; FP-03 görünüşlerde yok.', suggestion: 'Tek malzeme kod listesi hazırlanmalı.' },
+    { topic: 'Cephe – kod çakışması', drawings: '00-09-100, görünüşler', finding: 'FM-01 hem salon kabuğu hem saçak üst bandı için kullanılmış; FP-01 detayda TRAVERTEN (metrajda C.10 bu kodla), görünüşte taş FS-01 etiketli, koyu SIVA+BOYA ise FP-01 (C.11); FP-03 görünüşlerde yok.', suggestion: 'Tek malzeme kod listesi hazırlanmalı.' },
     { topic: 'Cephe – etiketsiz malzeme', drawings: 'görünüşler', finding: 'Kolon kaplamaları, yatay lamel bandı (~252 m²), kuzeydoğu koyu paneller ve güneybatı cephesindeki cam etiketsiz.', suggestion: 'Malzeme kodları eklenmeli.' },
     { topic: 'Cephe – eğrisel cephe', drawings: '01-04-100', finding: `Güney cam cephesi eğrisel; görünüşlerdeki cam izdüşümleri toplamı ${projGlass} m² (aynı cam birden çok görünüşte), plandaki gerçek açınımla hesaplanan cam ${r2(devL * H + extraA)} m².`, suggestion: 'Cam miktarı plandan alındı.' },
   );

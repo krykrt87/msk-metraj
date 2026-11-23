@@ -38,9 +38,14 @@ export function StatusActions({ item, profile, api }: { item: Item; profile: Use
     if (pending && (!pending.required || text.trim())) run(() => pending.run(text.trim()));
   }
 
-  if (!edit || item.cancelled) return null;
+  if (!edit) return null;
   const buttons: { label: string; onClick: () => void; cls?: string }[] = [];
-  if (!locked) {
+  if (item.cancelled)
+    buttons.push({
+      label: 'İptali geri al',
+      onClick: () => ask({ label: 'Kalem yeniden geçerli olacak. Gerekçe', required: true, confirm: 'İptali geri al', run: (t) => api.restoreItem({ itemId: id, reason: t }) }),
+    });
+  else if (!locked) {
     if (item.status !== 'kontrol_edildi') buttons.push({ label: 'Kontrol edildi', onClick: () => run(() => api.setItemStatus({ itemId: id, status: 'kontrol_edildi' })) });
     if (item.status !== 'sorunlu')
       buttons.push({
@@ -69,7 +74,7 @@ export function StatusActions({ item, profile, api }: { item: Item; profile: Use
 
   return (
     <div className="status-actions">
-      <div className="btn-row">
+      <div className="btn-row equal">
         {buttons.map((b) => (
           <button key={b.label} type="button" className={`btn ${b.cls ?? ''}`} disabled={busy} onClick={b.onClick}>
             {b.label}

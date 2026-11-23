@@ -1,8 +1,9 @@
 // Callable fonksiyon istemcisi. Hata mesajı kullanıcıya gösterilecek Türkçe metindir.
 import { httpsCallable } from 'firebase/functions';
 import { DISCIPLINE, PROJECT_ID } from '@shared/constants';
-import type { Confidence, FacadeColumn } from '@shared/types';
+import type { Confidence, FacadeColumn, Spec } from '@shared/types';
 import { functions } from '../firebase';
+import { LOCAL, LOCAL_READONLY } from '../local';
 
 export interface Result {
   batchId: string;
@@ -21,6 +22,7 @@ export function apiErrorMessage(e: unknown): string {
 
 function call<I, O = Result>(name: string) {
   return async (input: I): Promise<O> => {
+    if (LOCAL) throw new Error(LOCAL_READONLY);
     try {
       const r = await httpsCallable(functions, name)({ projectId: PROJECT_ID, discipline: DISCIPLINE, ...input });
       return r.data as O;
@@ -43,7 +45,8 @@ export const api = {
     value?: number | null; formula?: string; method?: string; drawings?: string[]; reason: string;
   }>('createItem'),
   cancelItem: call<Id & { reason: string }>('cancelItem'),
-  updateItemInfo: call<Id & { name?: string; code?: string | null; unit?: string; method?: string; confidence?: Confidence; drawings?: string[]; reason?: string }>('updateItemInfo'),
+  restoreItem: call<Id & { reason: string }>('restoreItem'),
+  updateItemInfo: call<Id & { name?: string; code?: string | null; unit?: string; method?: string; confidence?: Confidence; drawings?: string[]; specs?: Spec[]; reason?: string }>('updateItemInfo'),
   updateRoom: call<{ roomId: string; area?: number; floor?: string; ceilingLower?: string | null; ceilingUpper?: string | null; ch?: string | null; flooring?: string | null; note?: string | null; reason: string }>('updateRoom'),
   updateFacadeCell: call<{ rowId: string; column: FacadeColumn; value: number; reason: string }>('updateFacadeCell'),
   setMaterialFormula: call<{ materialId: string; formula: string | null; reason: string }>('setMaterialFormula'),

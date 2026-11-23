@@ -5,7 +5,9 @@ import { readDxf } from '../lib/dxf';
 import { flatten } from '../lib/flatten';
 import { makeMeasurer } from '../lib/regions';
 import { gfItems } from './gf-items';
+import { wallTopAt } from './roof-items';
 import { model3d } from './model3d';
+import { buildUnderlay } from './underlay';
 import { setRooms } from './rooms-index';
 import { bbox } from '../lib/geom';
 import type { CalcRow } from '../lib/decompose';
@@ -36,7 +38,7 @@ async function main() {
   if (!gf.plate) throw new Error('Kat genel sınırı bulunamadı');
   // satır açıklamalarında projedeki mahal adları için (zemin kat mahalleri, aynı çizim çerçevesi)
   setRooms(gf.rows.filter((r) => r.floor === 'Zemin Kat' && gf.shapes.has(r.id)).map((r) => ({ code: r.code, name: r.name, pts: gf.shapes.get(r.id)! })));
-  const items: TakeoffItem[] = [...gfItems(gfDxf, gfFlat, gf.rows, gf.plate)];
+  const items: TakeoffItem[] = [...gfItems(gfDxf, gfFlat, gf.rows, gf.plate, wallTopAt())];
   const findings: Takeoff['findings'] = gf.notes.map((n) => ({ topic: 'Mahal alanı', drawings: '4199-A-DD-01-02-100', finding: n, suggestion: 'Mahal sınırını/etiketini düzeltin.' }));
 
   // Döşeme kaplaması: halı salonlarda (döşeme detayı HALI KAPLAMA), diğer mahaller ID projesine göre
@@ -160,6 +162,9 @@ async function main() {
   const m3 = model3d.build(origin);
   writeFileSync('work/model3d.json', JSON.stringify(m3));
   console.log(`3B model: ${m3.elements.length} eleman`);
+  const ul = buildUnderlay(gfFlat, gf.plate.pts, origin);
+  writeFileSync('work/underlay.json', JSON.stringify(ul));
+  console.log(`Plan altlığı: ${ul.layers.length} katman`);
   // 3B eleman → hesap detayı satırı bağlantılarının hepsi gerçek bir satıra düşmeli
   const miss: string[] = [];
   for (const e of m3.elements)

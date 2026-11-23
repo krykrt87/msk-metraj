@@ -1,8 +1,11 @@
 // Metraj modülleri ölçtükleri geometriyi buraya 3B eleman olarak bırakır; build.ts work/model3d.json yazar.
-import type { El3, Layer3, Model3 } from '../../../shared/model3d';
+import { ID_PREFIX, type El3, type Layer3, type Model3 } from '../../../shared/model3d';
 import type { P } from '../lib/geom';
+import type { CalcRow } from '../../../shared/types';
 
-export type Raw3 = { layer: Layer3; kind: El3['kind']; items: string[]; lines?: Record<string, string | number>; label: string; loops?: P[][]; path?: P[]; closed?: boolean; z0: number; z1: number };
+/** row: elemanın hesap detayındaki kendi cetvel satırı; build kimliği satıra yazar (ref). */
+/** faces: x, y mm (çizim), z m. */
+export type Raw3 = { layer: Layer3; kind: El3['kind']; items: string[]; lines?: Record<string, string | number>; row?: CalcRow | CalcRow[]; label: string; loops?: P[][]; path?: P[]; faces?: (P & { z: number })[][]; closed?: boolean; z0: number; z1: number };
 const raw: Raw3[] = [];
 
 export const model3d = {
@@ -21,20 +24,26 @@ export const model3d = {
   /** Kalemlerin pozları build sonunda değişirse (ör. sıralama) eşleme tablosu ile güncellenir. */
   build(origin: P): Model3 {
     const tr = (p: P): [number, number] => [Math.round(p.x - origin.x) / 1000, Math.round(p.y - origin.y) / 1000];
-    const elements: El3[] = raw.map((e, i) => ({
-      id: `e${i}`,
+    const elements: El3[] = raw.map((e) => ({
+      id: '',
       layer: e.layer,
       kind: e.kind,
       items: [...new Set(e.items)],
       ...(e.lines ? { lines: e.lines } : {}),
       label: e.label,
-      ...(e.loops ? { loops: e.loops.map((l) => simplify(dedupe(l), 15).map(tr)).filter((l) => l.length >= 3) } : {}),
+      ...(e.loops && e.kind !== 'mesh' ? { loops: e.loops.map((l) => simplify(dedupe(l), 15).map(tr)).filter((l) => l.length >= 3) } : {}),
       ...(e.path ? { path: simplify(dedupe(e.path), 15, !!e.closed).map(tr) } : {}),
+      ...(e.faces ? { faces: e.faces.map((f) => f.map((q): [number, number, number] => [...tr(q), Math.round(q.z * 1000) / 1000])) } : {}),
       ...(e.closed ? { closed: true } : {}),
       z0: Math.round(e.z0 * 1000) / 1000,
       z1: Math.round(e.z1 * 1000) / 1000,
     }));
-    return { generatedAt: new Date().toISOString(), origin: [origin.x, origin.y], elements: elements.filter((e) => (e.loops ? e.loops.length > 0 : (e.path?.length ?? 0) > 0)) };
+    const kept = elements.filter((e) => (e.loops ? e.loops.length > 0 : e.faces ? e.faces.length > 0 : (e.path?.length ?? 0) > 0));
+    // shortcut: numara katman içindeki üretim sırası; önüne eleman eklenirse kayar (aynı build içinde tutarlı)
+    const n: Record<string, number> = {};
+    for (const e of kept) e.id = `${ID_PREFIX[e.layer]}-${(n[e.layer] = (n[e.layer] ?? 0) + 1)}`;
+    raw.forEach((e, i) => [e.row ?? []].flat().forEach((r) => (r.ref = elements[i].id || undefined))); // hesap satır(lar)ına eleman kimliği
+    return { generatedAt: new Date().toISOString(), origin: [origin.x, origin.y], elements: kept };
   },
 };
 

@@ -9,6 +9,7 @@ import type { ImportData } from './excel/build';
 import { writeImport } from './excel/write';
 import { argValue, initAdmin } from './lib/admin';
 import type { Takeoff } from './takeoff/metraj/model';
+import { SPECS } from './takeoff/metraj/specs';
 
 const CODE = /4199-A-DD-\d{2}-\d{2}-\d{3}/g;
 
@@ -40,8 +41,11 @@ export function takeoffToImport(t: Takeoff): ImportData {
       breakdown: i.lines.map((l) => ({ label: l.label, value: l.value, unit: l.unit, ...(l.note ? { note: l.note } : {}), ...(l.calc?.length ? { calc: l.calc } : {}) })),
       sources: i.sources,
       notes: i.notes ?? [],
+      specs: SPECS[i.poz] ?? [],
     };
   });
+  const unknown = Object.keys(SPECS).filter((p) => !t.items.some((i) => i.poz === p));
+  if (unknown.length) throw new Error(`Malzeme özelliği tanımlı ama kalemi yok: ${unknown.join(', ')}`);
   const rooms: Room[] = t.rooms.map((r, k) => ({
     id: r.id,
     code: r.code,
@@ -81,6 +85,15 @@ export function takeoffToImport(t: Takeoff): ImportData {
   };
 }
 
+/** Uygulamada elle düzenlenmiş özellikleri yeni kalemlere taşır; kalemi kalkan varsa veri silinmeden durur. */
+export function keepManualSpecs(items: Item[], prev: Item[]): string[] {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const orphans = prev.filter((p) => !byId.has(p.id)).map((p) => p.id);
+  if (orphans.length) throw new Error(`Elle girilmiş malzeme özelliği olan kalemler yeni metrajda yok: ${orphans.join(', ')}. Özellikleri başka kaleme taşıyın ya da kaydedin.`);
+  for (const p of prev) Object.assign(byId.get(p.id)!, { specs: p.specs ?? [], specsManual: true });
+  return prev.map((p) => p.id);
+}
+
 async function main(argv: string[]) {
   const file = argValue(argv, '--file') ?? 'work/metraj.json';
   const t = JSON.parse(readFileSync(file, 'utf8')) as Takeoff;
@@ -97,6 +110,9 @@ async function main(argv: string[]) {
   console.log(`${data.items.length} kalem, ${data.rooms.length} mahal, ${data.findings.length} kontrol notu`);
   if (argv.includes('--dry-run')) return;
   const { db, bucket } = initAdmin(argv);
+  const prev = await db.collection(`projects/${PROJECT_ID}/disciplines/${DISCIPLINE}/items`).where('specsManual', '==', true).get();
+  const kept = keepManualSpecs(data.items, prev.docs.map((d) => d.data() as Item));
+  if (kept.length) console.log(`Elle girilen malzeme özellikleri korundu: ${kept.join(', ')}`);
   await writeImport(db, data, { reset: true, source: `DWG metrajı ${t.generatedAt.slice(0, 10)}` });
   console.log('Emülatöre yazıldı (eski veri silindi).');
   // 3B model (metraj motorunun geometrisinden) → Storage
@@ -104,6 +120,10 @@ async function main(argv: string[]) {
   if (existsSync(model)) {
     await bucket.file(`projects/${PROJECT_ID}/disciplines/${DISCIPLINE}/model/model3d.json`).save(readFileSync(model), { contentType: 'application/json' });
     console.log('3B model yüklendi.');
+  }
+  if (existsSync('work/underlay.json')) {
+    await bucket.file(`projects/${PROJECT_ID}/disciplines/${DISCIPLINE}/model/underlay.json`).save(readFileSync('work/underlay.json'), { contentType: 'application/json' });
+    console.log('Plan altlığı yüklendi.');
   }
 }
 

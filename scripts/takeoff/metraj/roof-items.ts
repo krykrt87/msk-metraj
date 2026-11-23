@@ -94,12 +94,45 @@ function cluster(points: P[], radius: number): P[][] {
   return groups;
 }
 
+let roofDxf: { dxf: RawDxf; flat: Flat[] } | null = null;
+/** Çatı paftası bir kez okunur (duvar üst kotu ve çatı kalemleri ortak kullanır). */
+function loadRoof() {
+  if (!roofDxf) {
+    const dxf = readDxf(ROOF_FILE);
+    roofDxf = { dxf, flat: flatten(dxf) };
+  }
+  return roofDxf;
+}
+const siteOf = (flat: Flat[]) => flat.filter((f) => f.path[0] === 'SITEPLAN_L');
+
+/** +3,70 alçak çatılar: KD (tek halkalı AR-SAND + dış dikdörtgen) ve KB (açık çizgi çifti: dış / iç kutu). */
+function lowRoofs(site: Flat[]) {
+  const sandSingles = site.filter((f) => f.t === 'HATCH' && f.pattern === 'AR-SAND' && f.loops?.length === 1);
+  const neHatch = must(sandSingles.find((h) => bbox(h.loops![0]).minX > 700e3), 'KD alçak çatı taraması');
+  const neB = bbox(neHatch.loops![0]);
+  const neOuter = must(site.find((f) => f.closed && f.pts && f.pts.length === 4 && f.layer === 'A_Elev_1' && (() => { const b = bbox(f.pts!); return b.minX <= neB.minX + 1 && b.maxX >= neB.maxX - 1 && b.minY <= neB.minY + 1 && b.maxY >= neB.maxY - 1 && M2(area(f.pts!)) < 100; })()), 'KD alçak çatı dış dikdörtgeni');
+  const nwPl = site.filter((f) => f.layer === 'A_Elev_1' && f.t === 'PLINE' && !f.closed && f.pts!.length === 3 && (() => { const b = bbox(f.pts!); return b.minX < 640e3 && b.minY > 6019e3 && b.maxX > 659e3; })());
+  if (nwPl.length !== 2) throw new Error(`roof-items: KB kutusu çizgileri 2 bekleniyordu, ${nwPl.length}`);
+  const [nwO, nwI] = nwPl.map((f) => bbox(f.pts!)).sort((a, b) => (b.maxX - b.minX) * (b.maxY - b.minY) - (a.maxX - a.minX) * (a.maxY - a.minY));
+  return { sandSingles, neHatch, neB, neOuter, neOB: bbox(neOuter.pts!), nwO, nwI };
+}
+
+/**
+ * Zemin kat duvarının üst kotu, üstündeki çatıya göre: +3,70 alçak çatıların (dış kutu) altında 3,70; başka her yerde
+ * +7,10 (teras döşemesi; salonlarda +7,10 üstü kabuk duvar C.4 ayrı kalemde).
+ * shortcut: döşeme kalınlığı düşülmedi ve asma kat (+3,80) altı ayrılmadı; kesit/döşeme kalınlığı netleşince güncellenir.
+ */
+export function wallTopAt(): (p: P) => { z: number; where: string } {
+  const { neOB, nwO } = lowRoofs(siteOf(loadRoof().flat));
+  const inB = (p: P, b: ReturnType<typeof bbox>) => p.x >= b.minX && p.x <= b.maxX && p.y >= b.minY && p.y <= b.maxY;
+  return (p) => (inB(p, neOB) || inB(p, nwO) ? { z: 3.7, where: '+3,70 alçak çatı altı' } : { z: 7.1, where: '+7,10 çatı döşemesi altı' });
+}
+
 export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
-  const dxf = readDxf(ROOF_FILE);
-  const flat = flatten(dxf);
+  const { dxf, flat } = loadRoof();
   const top = (f: Flat) => f.path[0] ?? '';
   const inBlk = (b: string) => flat.filter((f) => top(f) === b);
-  const site = inBlk('SITEPLAN_L');
+  const site = siteOf(flat);
   const drain = inBlk('Catı_su_tahliye');
   const items: TakeoffItem[] = [];
   const findings: Finding[] = [];
@@ -179,21 +212,110 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
     notes: ['01-02-100 / 01-02-200 paftalarındaki UZAY KAFES bloğu iki kopya içerir (zemin kat + asma kat ötelemesi); blok tanımları y yönünde 0,10 m farklı (43,00 m yerine 43,10 m).'],
   });
 
+  // ---------------------------------------------------------------- gizli dere eksenleri (B.2 yüzey biçimi, B.10)
+  const diag = site.filter((f) => f.layer === 'A_Elev_3' && f.t === 'PLINE' && !f.closed && f.pts!.length === 2 && M(length(f.pts!)) > 40);
+  const gutterLines = halls.map((h) => {
+    const ls = diag.filter((d) => pointInPolygon({ x: (d.pts![0].x + d.pts![1].x) / 2, y: (d.pts![0].y + d.pts![1].y) / 2 }, h.outer));
+    if (ls.length !== 2) throw new Error(`roof-items: ${h.name} için 2 dere çizgisi bekleniyordu, ${ls.length}`);
+    const [a, b] = ls.map((l) => l.pts!);
+    const ux = (a[1].x - a[0].x) / length(a);
+    const uy = (a[1].y - a[0].y) / length(a);
+    const w = Math.abs((b[0].x - a[0].x) * uy - (b[0].y - a[0].y) * ux);
+    const la = Math.round(length(a)) / 1000;
+    const lb = Math.round(length(b)) / 1000;
+    const calc: CalcRow[] = [
+      { kind: 'doğru', unit: 'm', label: '1. kenar', name: '1. kenar çizgisi (ortalama için ½)', adet: 0.5, boy: la, sign: 1, value: la / 2 },
+      { kind: 'doğru', unit: 'm', label: '2. kenar', name: '2. kenar çizgisi (ortalama için ½)', adet: 0.5, boy: lb, sign: 1, value: lb / 2 },
+    ];
+    return { h, L: ((la + lb) / 2) * 1000, w, calc, a, b };
+  });
+
+  // ---------------------------------------------------------------- salon çatı biçimi (3B ve bulgular)
+  // Salon çatıları dağ gibi: dere köşegeninin iki ucu (alçak köşeler) en düşük, öbür iki köşe tepe. Her kenar alçak
+  // köşeden tepeye z = alçak + yükselti·s^p (s 0→1) eğrisiyle yükselir; çatı yüzeyi dereye paralel çizgiler boyunca aynı kotta.
+  // Parapet üstü: görünüş 01-04-100 kabuk taraması (cati_kaplama_on1) üst kenarı, −0,40 saha kotundan; tepeler kesitteki
+  // "Parapet Hizası" +16,06 / +17,87 ile uyumlu. Çatı yüzeyi alçak kotu: kesit 01-03-100'de dere kutusunun üstü.
+  // shortcut: çatı yüzeyi parapet eğrisine paralel varsayıldı (kesitteki çatı çizgileriyle fark ≤0,5 m); çatı kesiti/detayı gelince düzeltilir.
+  type Hall = (typeof halls)[number];
+  type P3 = P & { z: number };
+  const bigHall = halls.reduce((a, h) => (area(h.inner) > area(a.inner) ? h : a));
+  const shape = (h: Hall) => (h === bigHall ? { top: 11.874, roof: 10.81, rise: 6, p: 1.9 } : { top: 12.084, roof: 11.45, rise: 4, p: 2 });
+  const lerp = (a: P, b: P, t: number): P => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  /** Dikdörtgenin dere ekseni uçlarına en yakın iki köşesi (alçak köşeler); karşılıklı olmalı. */
+  const lowCorners = (rect: P[], axis: P[], h: Hall) => {
+    const lo = axis.map((q) => rect.reduce((a, b) => (Math.hypot(a.x - q.x, a.y - q.y) < Math.hypot(b.x - q.x, b.y - q.y) ? a : b)));
+    if (Math.abs(rect.indexOf(lo[0]) - rect.indexOf(lo[1])) !== 2) throw new Error(`roof-items: ${h.name} deresi köşegen değil`);
+    return lo;
+  };
+  const N3 = 16; // kenar başına şerit
+  const kz = (z: number) => `+${z.toFixed(2).replace('.', ',')}`;
+  const b2Line = (h: Hall) => `${h.name} (parapet içi, eğik yüzey)`;
+  const hallGeo = gutterLines.map(({ h, a: axis }) => {
+    const S = shape(h);
+    const zAt = (base: number, s: number) => base + S.rise * s ** S.p;
+    const up = S.top - S.roof;
+    // çatı yüzeyi: her tepe köşesine doğru dereye paralel düzlemsel şeritler
+    const [l1, l2] = lowCorners(h.inner, axis, h);
+    const roof: P3[][] = [];
+    for (const H of h.inner.filter((c) => c !== l1 && c !== l2))
+      for (let k = 0; k < N3; k++) {
+        const [s0, s1] = [k / N3, (k + 1) / N3];
+        const [z0, z1] = [zAt(S.roof, s0), zAt(S.roof, s1)];
+        roof.push([{ ...lerp(l1, H, s0), z: z0 }, { ...lerp(l2, H, s0), z: z0 }, { ...lerp(l2, H, s1), z: z1 }, { ...lerp(l1, H, s1), z: z1 }]);
+      }
+    // dış yüzün her kenarı alçak köşeden tepeye: kabuk +7,10 → çatı, parapet çatı → parapet üstü
+    const lo = lowCorners(h.outer, axis, h);
+    const shell: P3[][] = [];
+    const parapet: P3[][] = [];
+    for (let i = 0; i < 4; i++) {
+      let [a, b] = [h.outer[i], h.outer[(i + 1) % 4]];
+      if (!lo.includes(a)) [a, b] = [b, a];
+      for (let k = 0; k < N3; k++) {
+        const [p0, p1] = [lerp(a, b, k / N3), lerp(a, b, (k + 1) / N3)];
+        const [t0, t1] = [zAt(S.top, k / N3), zAt(S.top, (k + 1) / N3)];
+        shell.push([{ ...p0, z: 7.1 }, { ...p1, z: 7.1 }, { ...p1, z: t1 - up }, { ...p0, z: t0 - up }]);
+        parapet.push([{ ...p0, z: t0 - up }, { ...p1, z: t1 - up }, { ...p1, z: t1 }, { ...p0, z: t0 }]);
+      }
+    }
+    // eğik yüzey cetveli: her şerit düzlemsel yamuk; paralel kenarlar dere doğrultusunda (sabit kot), yükseklik eğik mesafe
+    const m3 = (x: number) => Math.round(x * 1000) / 1000;
+    const diagL = Math.hypot(l2.x - l1.x, l2.y - l1.y) / 1000;
+    const calc: CalcRow[] = [];
+    for (const H of h.inner.filter((c) => c !== l1 && c !== l2)) {
+      const D = Math.abs((l2.x - l1.x) * (H.y - l1.y) - (l2.y - l1.y) * (H.x - l1.x)) / 1e6 / diagL; // tepenin dereye uzaklığı, m
+      for (let k = 0; k < N3; k++) {
+        const [s0, s1] = [k / N3, (k + 1) / N3];
+        const [a, b, hh] = [m3((1 - s0) * diagL), m3((1 - s1) * diagL), m3(Math.hypot((s1 - s0) * D, zAt(S.roof, s1) - zAt(S.roof, s0)))];
+        calc.push({ kind: 'yamuk', label: `Yamuk: (${a.toFixed(3)} + ${b.toFixed(3)}) / 2 × ${hh.toFixed(3)}`, name: `${k + 1}. şerit (${kz(zAt(S.roof, s0))} → ${kz(zAt(S.roof, s1))})`, adet: 1, en: m3((a + b) / 2), boy: hh, a, b, sign: 1, value: ((a + b) / 2) * hh });
+      }
+    }
+    const H0 = h.inner.find((c) => c !== l1 && c !== l2)!;
+    const D0 = Math.abs((l2.x - l1.x) * (H0.y - l1.y) - (l2.y - l1.y) * (H0.x - l1.x)) / 1e6 / diagL;
+    // iki yarı eş (dikdörtgen): aynı şeritler adet 2 olarak birleşir
+    return { h, S, roof, shell, parapet, calc: mergeRows(calc), surf: sum(calc.map((r) => r.value)), slope: (S.rise * S.p) / D0 };
+  });
+  const roofZ = (h: Hall) => shape(h).roof;
+
   // ---------------------------------------------------------------- B.2 salon çatı örtüsü
   const lineHatches = site.filter((f) => f.t === 'HATCH' && f.pattern === 'LINE' && f.loops);
   const covering = sum(lineHatches.map((h) => exA(h.loops![0])));
   const innerSum = sum(halls.map((h) => area(h.inner)));
+  const surfSum = sum(hallGeo.map((g) => g.surf));
   items.push({
-    poz: 'B.2', group: 'B', name: 'Salon çatıları – çatı örtüsü alanı (parapet içi)', unit: 'm²', value: r2(M2(innerSum)),
+    poz: 'B.2', group: 'B', name: 'Salon çatıları – çatı örtüsü alanı (parapet içi, eğik yüzey)', unit: 'm²', value: r2(surfSum),
     method:
-      'Üç salonun çatısı, çatı planında (SITEPLAN_L bloğu, katman A_Elev_1) her salon için çizilmiş iki dikdörtgenle tanımlı: parapetin dış yüzü ve iç yüzü (parapet kalınlığı 0,30 m; salonlar arasında 0,80 m derz). Çatı örtüsü alanı olarak parapet iç yüzündeki dikdörtgenler alındı. Örtü, her salonda köşegen gizli dereyle ikiye ayrılan iki üçgen LINE taramasıyla gösterilmiş; bu taramaların toplamı (dere şeridi hariç) bilgi satırı olarak verildi, toplama katılmadı. Çatı kotu planda verilmemiş.',
+      'Üç salonun çatısı, çatı planında (SITEPLAN_L bloğu, katman A_Elev_1) her salon için çizilmiş iki dikdörtgenle tanımlı: parapetin dış yüzü ve iç yüzü (parapet kalınlığı 0,30 m; salonlar arasında 0,80 m derz). Parapet iç yüzündeki dikdörtgen çatının izdüşümüdür; çatı ise düz değil, dağ gibi eğimli: köşegen gizli derenin iki ucundaki köşeler en alçak, öbür iki köşe tepe. Her kenar alçak köşeden tepeye eğrisel yükselir (parapet üstü görünüş 01-04-100\'den, dere kotu kesit 01-03-100\'den; küçük salonlarda +11,45 → +15,45, büyük salonda +10,81 → +16,81), yüzey dereye paralel çizgiler boyunca aynı kottadır. Çatı örtüsü alanı bu eğik yüzeyin gerçek alanıdır: yüzey her tepe köşesine doğru 16 şeride bölündü; her şerit düzlemsel bir yamuktur (paralel kenarlar dere doğrultusunda, yükseklik iki kenar arasındaki eğik mesafe). İzdüşüm alanı ve örtü taraması (iki üçgen LINE taraması, dere şeridi hariç) bilgi satırı olarak verildi, toplama katılmadı.',
     sources: [
-      { drawing: ROOF, where: 'blok SITEPLAN_L · katman A_Elev_1 · 6 kapalı LWPOLYLINE (salon başına dış + iç parapet yüzü)' },
+      { drawing: ROOF, where: 'blok SITEPLAN_L · katman A_Elev_1 · 6 kapalı LWPOLYLINE (salon başına dış + iç parapet yüzü) + katman A_Elev_3 dere köşegenleri' },
+      { drawing: '4199-A-DD-01-04-100', where: 'görünüşler · salon kabuk taraması (cati_kaplama_on1 / sol1) üst kenarı: parapet üstü eğrisi' },
+      { drawing: '4199-A-DD-01-03-100', where: 'kesitler · salon çatısında gizli dere kutusunun üst kotu' },
       { drawing: ROOF, where: 'blok SITEPLAN_L · katman A_Patt_Othr · 6 HATCH LINE (45°/135°, ölçek 150)' },
     ],
-    confidence: 'Yüksek',
+    confidence: 'Orta',
+    notes: ['Çatı yüzeyi parapet üstü eğrisine paralel varsayıldı; kesitteki çatı çizgileriyle kot farkı yer yer 0,5 m\'ye varıyor. Bunun alana etkisi ±%0,5 mertebesinde. Kesin yüzey için çatı detay/kesit paftası istenmeli.'],
     lines: [
-      ...halls.map((h): Line => ({ label: `${h.name} (parapet içi)`, value: r2(M2(area(h.inner))), unit: 'm²', note: `dış yüz ${fmt(M2(area(h.outer)))} m² · ${fmt(M(h.b.maxX - h.b.minX))} × ${fmt(M(h.b.maxY - h.b.minY))} m (dış)`, calc: decomposeRegion([h.inner]) })),
+      ...hallGeo.map(({ h, surf, calc }): Line => ({ label: b2Line(h), value: r2(surf), unit: 'm²', note: `izdüşüm ${fmt(r2(M2(area(h.inner))))} m² (+%${fmt(Math.round((surf / M2(area(h.inner)) - 1) * 1000) / 10)}) · dış yüz ${fmt(M(h.b.maxX - h.b.minX))} × ${fmt(M(h.b.maxY - h.b.minY))} m`, calc })),
+      { label: 'İzdüşüm – parapet içi dikdörtgenler (bilgi)', value: r2(M2(innerSum)), unit: 'm²', note: 'toplama katılmadı', calc: halls.flatMap((h) => decomposeRegion([h.inner]).map((r) => ({ ...r, name: h.name }))) },
       { label: 'Örtü taraması toplamı (bilgi, dere şeridi hariç)', value: r2(M2(covering)), unit: 'm²', note: `${lineHatches.length} üçgen LINE taraması; toplama katılmadı`, calc: mergeRows(lineHatches.flatMap((h) => decomposeRegion([h.loops![0]]))) },
     ],
   });
@@ -234,11 +356,7 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
   });
 
   // ---------------------------------------------------------------- B.4 / B.5 alçak çatılar +3,70
-  const sandSingles = site.filter((f) => f.t === 'HATCH' && f.pattern === 'AR-SAND' && f.loops?.length === 1);
-  const neHatch = must(sandSingles.find((h) => bbox(h.loops![0]).minX > 700e3), 'KD alçak çatı taraması');
-  const neB = bbox(neHatch.loops![0]);
-  const neOuter = must(site.find((f) => f.closed && f.pts && f.pts.length === 4 && f.layer === 'A_Elev_1' && (() => { const b = bbox(f.pts!); return b.minX <= neB.minX + 1 && b.maxX >= neB.maxX - 1 && b.minY <= neB.minY + 1 && b.maxY >= neB.maxY - 1 && M2(area(f.pts!)) < 100; })()), 'KD alçak çatı dış dikdörtgeni');
-  const neOB = bbox(neOuter.pts!);
+  const { sandSingles, neHatch, neB, neOuter, neOB, nwO, nwI } = lowRoofs(site);
   const under = (b: ReturnType<typeof bbox>) => {
     const c = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
     return roomAt(c) ?? roomsNear(c, 8000)[0] ?? null; // altında mahal yoksa en yakın mahal
@@ -255,11 +373,7 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
       { label: 'Dış dikdörtgen (bilgi)', value: r2(M2(area(neOuter.pts!))), unit: 'm²', note: `${fmt(M(neOB.maxX - neOB.minX))} × ${fmt(M(neOB.maxY - neOB.minY))} m`, calc: decomposeRegion([neOuter.pts!]) },
     ],
   });
-  const nwPl = site.filter((f) => f.layer === 'A_Elev_1' && f.t === 'PLINE' && !f.closed && f.pts!.length === 3 && (() => { const b = bbox(f.pts!); return b.minX < 640e3 && b.minY > 6019e3 && b.maxX > 659e3; })());
-  if (nwPl.length !== 2) throw new Error(`roof-items: KB kutusu çizgileri 2 bekleniyordu, ${nwPl.length}`);
-  const nwBoxes = nwPl.map((f) => bbox(f.pts!)).sort((a, b) => (b.maxX - b.minX) * (b.maxY - b.minY) - (a.maxX - a.minX) * (a.maxY - a.minY));
   const rectA = (b: ReturnType<typeof bbox>) => (b.maxX - b.minX) * (b.maxY - b.minY);
-  const [nwO, nwI] = nwBoxes;
   const nwName = under(nwI)?.label ?? 'kuzeybatı';
   items.push({
     poz: 'B.5', group: 'B', name: `Alçak çatı/teras +3,70 – ${nwName} üstü (kaplama belirsiz)`, unit: 'm²', value: r2(M2(rectA(nwI))),
@@ -387,22 +501,6 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
   });
 
   // ---------------------------------------------------------------- B.10 gizli dere
-  const diag = site.filter((f) => f.layer === 'A_Elev_3' && f.t === 'PLINE' && !f.closed && f.pts!.length === 2 && M(length(f.pts!)) > 40);
-  const gutterLines = halls.map((h) => {
-    const ls = diag.filter((d) => pointInPolygon({ x: (d.pts![0].x + d.pts![1].x) / 2, y: (d.pts![0].y + d.pts![1].y) / 2 }, h.outer));
-    if (ls.length !== 2) throw new Error(`roof-items: ${h.name} için 2 dere çizgisi bekleniyordu, ${ls.length}`);
-    const [a, b] = ls.map((l) => l.pts!);
-    const ux = (a[1].x - a[0].x) / length(a);
-    const uy = (a[1].y - a[0].y) / length(a);
-    const w = Math.abs((b[0].x - a[0].x) * uy - (b[0].y - a[0].y) * ux);
-    const la = Math.round(length(a)) / 1000;
-    const lb = Math.round(length(b)) / 1000;
-    const calc: CalcRow[] = [
-      { kind: 'doğru', unit: 'm', label: '1. kenar', name: '1. kenar çizgisi (ortalama için ½)', adet: 0.5, boy: la, sign: 1, value: la / 2 },
-      { kind: 'doğru', unit: 'm', label: '2. kenar', name: '2. kenar çizgisi (ortalama için ½)', adet: 0.5, boy: lb, sign: 1, value: lb / 2 },
-    ];
-    return { h, L: ((la + lb) / 2) * 1000, w, calc, a, b };
-  });
   const dereNote = ukNotes.find((t) => /DERE/.test(t));
   items.push({
     poz: 'B.10', group: 'B', name: 'Yağmur suyu toplama kanalı / gizli dere (salon çatıları, ~30 cm)', unit: 'm', value: r2(M(sum(gutterLines.map((x) => x.L)))),
@@ -481,7 +579,7 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
   findings.push({
     topic: 'Çatı – kotlar',
     drawings: ROOF,
-    finding: 'Çatı planında yalnız döşeme (SSL) kotları var: teras +7.10 (+28.80), alçak çatılar +3.70 (+25.40), boşluk içleri ±0.00 (+21.70). Salon çatılarının (uzay kafes üstü) kotu, parapet üst kotları ("Top of Parapet") ve saçak kotu verilmemiş. Plandaki tek ölçü/ölçek bilgisi bunlar.',
+    finding: 'Çatı planında yalnız döşeme (SSL) kotları var: teras +7.10 (+28.80), alçak çatılar +3.70 (+25.40), boşluk içleri ±0.00 (+21.70). Salon çatılarının (uzay kafes üstü) kotu, parapet üst kotları ("Top of Parapet") ve saçak kotu verilmemiş. Plandaki tek ölçü/ölçek bilgisi bunlar. 3B model için salon kotları görünüş 01-04-100 ve kesit 01-03-100\'den alındı: parapet üstü küçük salonlarda +12,08 → +16,08, büyük salonda +11,87 → +17,87; çatı yüzeyi dere köşegeninde +11,45 / +10,81.',
     suggestion: 'Salon çatı kotu, parapet üst kotları ve saçak kalınlığı için kesit paftalarına (01-04-xxx) bakın veya mimardan isteyin; parapet yüksekliği ve harpuşta metrajı bunlara bağlı.',
   });
   findings.push({
@@ -510,32 +608,29 @@ Ayrıca 4 adet "kare_kesitli_gider" çizim dışında, (412–465; 0) civarında
   findings.push({
     topic: 'Çatı – eğim',
     drawings: ROOF,
-    finding: `Çatı drenaj bloğunda ${slopes.length} eğim notu var (MULTILEADER): ${slopeVals.join(', ') || '—'}. Bunlara eşlik eden ${drain.filter((f) => f.layer === 'CATI_SLOPE').length} eğim oku (CATI_SLOPE) bulunuyor. Teras, alçak çatılar ve salon çatılarının hepsi %1 eğimli; şap/eğim betonu kalınlığı bu eğim ve süzgeç aralıklarına göre hesaplanmalı.`,
+    finding: `Çatı drenaj bloğunda ${slopes.length} eğim notu var (MULTILEADER): ${slopeVals.join(', ') || '—'}. Bunlara eşlik eden ${drain.filter((f) => f.layer === 'CATI_SLOPE').length} eğim oku (CATI_SLOPE) bulunuyor. Teras ve alçak çatılar %1 eğimli; şap/eğim betonu kalınlığı bu eğim ve süzgeç aralıklarına göre hesaplanmalı. Salon çatıları ise düz değil (görünüş 01-04-100, kesit 01-03-100): dere köşegenindeki iki köşe en alçak, öbür iki köşe tepe; yüzey dereye eğrisel iner, tepe yakınında eğim ≈%${Math.round(Math.max(...hallGeo.map((g) => g.slope)) * 100)}. Eğik yüzey alanı izdüşümden fazla: ${hallGeo.map((g) => `${g.h.name} ${fmt(r2(g.surf))} m² (izdüşüm ${fmt(r2(M2(area(g.h.inner))))} m²)`).join(', ')}; B.2 bu eğik yüzey alanını kullanır.`,
     suggestion: 'Eğim betonu ortalama kalınlığını bu %1 eğim ve drenaj bölmeleriyle (A_Trce_Hidn mahya/dere çizgileri) hesaplayın; düz çatı için %1 alt sınırdır, yalıtım üreticisinin onayı alınmalı.',
   });
 
   // ---------------------------------------------------------------- 3B
-  // Kotlar (kesit 01-03-100): teras +7,10 (parapet üstü +7,60), alçak çatılar +3,70, saçak +6,00 → +7,60,
-  // salon çatıları +16,72 (Salon 01) / +14,93, salon parapet üstleri +17,87 / +16,06.
-  const bigHall = halls.reduce((a, h) => (area(h.inner) > area(a.inner) ? h : a));
-  const roofZ = (h: (typeof halls)[number]) => (h === bigHall ? 16.72 : 14.93);
-  const paZ = (h: (typeof halls)[number]) => (h === bigHall ? 17.87 : 16.06);
+  // Kotlar (kesit 01-03-100): teras +7,10 (parapet üstü +7,60), alçak çatılar +3,70, saçak +6,00 → +7,60; salonlar hallGeo'da.
   model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.3'], lines: { 'B.3': 'Dış halka (parapet iç yüzü)' }, label: 'Çakıllı teras çatı +7,10', loops: [outer, ...holes], z0: 7.1, z1: 7.1 });
   model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.4'], lines: { 'B.4': 'Çakıllı alan (tarama, parapet içi)' }, label: `Alçak çatı +3,70 – ${neName} üstü`, loops: neHatch.loops!, z0: 3.7, z1: 3.7 });
   model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.5'], lines: { 'B.5': 'Parapet içi alan' }, label: `Alçak çatı/teras +3,70 – ${nwName} üstü`, loops: [rc(nwI)], z0: 3.7, z1: 3.7 });
   model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.6'], lines: { 'B.6': 'Saçak çokgeni (serbest kenar ↔ parapet dış yüzü)' }, label: 'Saçak (kanopi) üstü +7,60', loops: [canopyPoly], z0: 7.6, z1: 7.6 });
   for (const e of canopyEdge) model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['B.7'], lines: { 'B.7': e.label }, label: `Saçak serbest kenarı – ${e.label} (+6,00 → +7,60)`, path: e.pts, z0: 6.0, z1: 7.6 });
-  for (const h of halls) {
-    model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.2'], lines: { 'B.2': `${h.name} (parapet içi)` }, label: `${h.name} çatısı (parapet içi) +${roofZ(h).toFixed(2)}`, loops: [h.inner], z0: roofZ(h), z1: roofZ(h) });
-    model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['B.9'], lines: { 'B.9': h.name }, label: `${h.name} parapeti (dış yüz)`, path: h.outer, closed: true, z0: roofZ(h), z1: paZ(h) });
-    model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['C.2', 'C.3'], label: `${h.name} kabuğu (+7,10 → çatı)`, path: h.outer, closed: true, z0: 7.1, z1: roofZ(h) });
+  for (const { h, S, roof, shell, parapet } of hallGeo) {
+    const [r1, t0, t1] = [S.roof + S.rise, S.top, S.top + S.rise];
+    model3d.add({ layer: 'çatı', kind: 'mesh', items: ['B.2'], lines: { 'B.2': b2Line(h) }, label: `${h.name} çatısı (parapet içi) ${kz(S.roof)} dere → ${kz(r1)} tepe`, faces: roof, z0: S.roof, z1: r1 });
+    model3d.add({ layer: 'cephe', kind: 'mesh', items: ['B.9'], lines: { 'B.9': h.name }, label: `${h.name} parapeti (dış yüz, üstü ${kz(t0)} → ${kz(t1)})`, faces: parapet, z0: S.roof, z1: t1 });
+    model3d.add({ layer: 'cephe', kind: 'mesh', items: ['C.2', 'C.3'], label: `${h.name} kabuğu (+7,10 → çatı)`, faces: shell, z0: 7.1, z1: r1 });
   }
   let uh = 0;
   let us = 0;
   for (const f of uk) {
     const ub = bbox(f.pts!);
     const ul = ukName(f.pts!);
-    model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.1'], lines: { 'B.1': ul }, label: `Uzay kafes izdüşümü – ${ul}`, loops: [f.pts!], z0: 13.5, z1: 13.5 });
+    model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.1'], lines: { 'B.1': ul }, label: `Uzay kafes izdüşümü – ${ul}`, loops: [f.pts!], z0: 9.1, z1: 9.1 }); // kesitte alt başlığın en düşük yeri ≈ +9,10; eğrisel çatının altında kalır
   }
   const parPaths: [string, P[], boolean, string][] = [
     ...southChain.map((p): [string, P[], boolean, string] => ['Güney eğrisel parapet', p, false, 'Güney eğrisel parapet (dış yüz)']),
@@ -551,6 +646,32 @@ Ayrıca 4 adet "kare_kesitli_gider" çizim dışında, (412–465; 0) civarında
     const h = hallOf(d.at!);
     if (h) model3d.add({ layer: 'donatı', kind: 'pin', items: ['B.12'], lines: { 'B.12': h.name }, label: `Gizli dere süzgeci – ${h.name}`, path: [d.at!], z0: roofZ(h), z1: roofZ(h) + 0.4 });
   }
-  for (const gr of groups) model3d.add({ layer: 'donatı', kind: 'pin', items: ['B.13'], label: 'Yağmur iniş borusu Ø110', path: [gr[0]], z0: 0, z1: 7.1 });
+  // Boru tepesi bulunduğu çatının kotunda (salon / +3,70 alçak çatı / +7,10 teras). Duvar, kolon ya da
+  // parapete 1 m'den uzak boru (fuaye ortası gibi) zemine inemez: düşey hattı planda yok, yalnız süzgeç
+  // altındaki tavan boşluğu parçası çizilir.
+  const hosts: P[][] = model3d.find((e) => (e.layer === 'duvar' || e.layer === 'kolon') && !!e.loops).map((e) => e.loops![0]);
+  // teras dış sınırı kullanılmaz: alçak çatıya geçiş çizgisi mutfak gibi mahallerin ortasından geçiyor
+  const parapets = [...parPaths.map(([, p]) => p), ...halls.map((h) => h.outer)];
+  const segDist = (p: P, l: P[], closed: boolean) => {
+    let best = Infinity;
+    for (let i = 0; i < (closed ? l.length : l.length - 1); i++) {
+      const a = l[i];
+      const b = l[(i + 1) % l.length];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+      best = Math.min(best, Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy));
+    }
+    return best;
+  };
+  const nearHost = (p: P) => hosts.some((l) => pointInPolygon(p, l) || segDist(p, l, true) < 1000) || parapets.some((l) => segDist(p, l, false) < 1000);
+  for (const gr of groups) {
+    const p = gr[0];
+    const h = hallOf(p);
+    const zTop = h ? roofZ(h) : !inTerrace(p) && (inBox(p, neOB) || inBox(p, nwO)) ? 3.7 : 7.1;
+    const free = !nearHost(p);
+    const where = h ? ` – ${h.name} (dere ucu)` : zTop === 3.7 ? ' – +3,70 alçak çatı' : '';
+    model3d.add({ layer: 'donatı', kind: 'pin', items: ['B.13'], label: `Yağmur iniş borusu Ø110${where}${free ? ' – süzgeç altı; düşey hat planda yok (duvar/kolondan uzak)' : ''}`, path: [p], z0: free ? zTop - 0.6 : 0, z1: zTop });
+  }
   return { items, findings };
 }

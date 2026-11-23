@@ -4,7 +4,8 @@ import { readDxf, val, type RawDxf } from './lib/dxf';
 import { flatten, type Flat } from './lib/flatten';
 import type { P } from './lib/geom';
 
-export interface Door { name: string; block: string; at: P; leaves: number[]; layer: string }
+/** inst: blok eklemesinin kimliği (çizgileri flatten'da aynı inst ile gelir). */
+export interface Door { name: string; block: string; at: P; leaves: number[]; layer: string; inst?: number }
 
 export function leafRadii(dxf: RawDxf, name: string, depth = 0): number[] {
   const b = dxf.blocks.get(name);
@@ -44,7 +45,7 @@ export function extractDoors(dxf: RawDxf, flat: Flat[], blockRe: RegExp, win: (p
     if (!f.path.length || !blockRe.test(f.path[0])) continue;
     const s = Math.sqrt(f.scaleDet ?? 1);
     const leaves = leafRadii(dxf, f.name!).map((r) => Math.round((r * s) / 10) * 10).filter((r) => r >= 500 && r <= 2000);
-    doors.push({ name: f.name!, block: f.path[0], at: f.at, leaves, layer: f.layer });
+    doors.push({ name: f.name!, block: f.path[0], at: f.at, leaves, layer: f.layer, inst: f.inst });
   }
   return doors;
 }

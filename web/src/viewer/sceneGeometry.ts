@@ -1,7 +1,7 @@
 // El3 → three.js geometrisi (çekirdek three; WebGPU ve WebGL görüntüleyici aynı sınıfları kullanır).
 import * as THREE from 'three';
 import type { El3 } from '@shared/model3d';
-import { ribbonPositions, splitShapes } from './geometry';
+import { meshPositions, ribbonPositions, splitShapes } from './geometry';
 
 function shapeOf(outer: [number, number][], holes: [number, number][][]) {
   const s = new THREE.Shape(outer.map(([x, y]) => new THREE.Vector2(x, y)));
@@ -25,6 +25,12 @@ export function geometryOf(e: El3): THREE.BufferGeometry | null {
   if (e.kind === 'ribbon' && e.path && e.path.length >= 2) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(ribbonPositions(e.path, !!e.closed, e.z0, e.z1), 3));
+    g.computeVertexNormals();
+    return g;
+  }
+  if (e.kind === 'mesh' && e.faces?.length) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(meshPositions(e.faces), 3));
     g.computeVertexNormals();
     return g;
   }

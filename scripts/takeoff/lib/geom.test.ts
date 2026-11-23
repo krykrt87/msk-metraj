@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { apply, area, expandBulges, length, mul, regionArea, rotate, sampleArc, sampleSpline, scale, translate } from './geom';
+import { apply, area, clipConvex, expandBulges, length, mul, regionArea, rotate, sampleArc, sampleSpline, scale, translate } from './geom';
+
+describe('clipConvex', () => {
+  it('dikdörtgen duvar: kapı kutusu ortadan alınınca iki yan parça + lento alanı toplamı korunur', () => {
+    const wall = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 1 }, { x: 0, y: 1 }];
+    const box = [{ x: 4, y: -5 }, { x: 6, y: -5 }, { x: 6, y: 5 }, { x: 4, y: 5 }];
+    const left = [{ x: -99, y: -99 }, { x: 4, y: -99 }, { x: 4, y: 99 }, { x: -99, y: 99 }];
+    expect(area(clipConvex(wall, box))).toBeCloseTo(2);
+    expect(area(clipConvex(wall, left))).toBeCloseTo(4);
+    expect(clipConvex(wall, [{ x: 20, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 1 }])).toEqual([]);
+  });
+});
 
 const sq = (x: number, y: number, s: number) => [
   { x, y },

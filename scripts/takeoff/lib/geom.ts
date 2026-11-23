@@ -146,6 +146,30 @@ export function pointInPolygon(p: P, poly: P[]): boolean {
   return inside;
 }
 
+/** Sutherland–Hodgman: halkanın dışbükey (saat yönü tersine) çokgen içinde kalan kısmı. İçbükey halka sınırı
+ *  birden çok kez keserse parçalar kırpma kenarı boyunca sıfır genişlikli köprüyle bağlanır. */
+export function clipConvex(ring: P[], clip: P[]): P[] {
+  let out = ring;
+  for (let i = 0; i < clip.length && out.length; i++) {
+    const a = clip[i];
+    const b = clip[(i + 1) % clip.length];
+    const side = (p: P) => (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+    const src = out;
+    out = [];
+    for (let j = 0; j < src.length; j++) {
+      const p = src[j];
+      const q = src[(j + 1) % src.length];
+      const [sp, sq] = [side(p), side(q)];
+      if (sp >= 0) out.push(p);
+      if (sp >= 0 !== sq >= 0) {
+        const t = sp / (sp - sq);
+        out.push({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t });
+      }
+    }
+  }
+  return out;
+}
+
 /** Çok halkalı bölge alanı: iç içe derinliği çift olan halka eklenir, tek olan çıkarılır. */
 export function regionArea(loops: P[][]): number {
   const valid = loops.filter((l) => l.length >= 3);

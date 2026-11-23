@@ -14,11 +14,15 @@ export const LAYERS3: { key: Layer3; label: string; visible: boolean }[] = [
   { key: 'donatı', label: 'Kapı / donatı', visible: true },
 ];
 
+/** Eleman kimliği öneki: DUV-12 gibi (katman içinde üretim sırası). */
+export const ID_PREFIX: Record<Layer3, string> = { döşeme: 'DOS', mahal: 'MAH', duvar: 'DUV', kolon: 'KOL', tavan: 'TAV', çatı: 'CAT', cephe: 'CEP', donatı: 'DON' };
+
 export interface El3 {
   id: string;
   layer: Layer3;
-  /** prism: halkalar z0→z1 katı; flat: z0'da yüzey; ribbon: çizgi boyunca z0→z1 düşey yüzey; pin: nokta işareti. */
-  kind: 'prism' | 'flat' | 'ribbon' | 'pin';
+  /** prism: halkalar z0→z1 katı; flat: z0'da yüzey; ribbon: çizgi boyunca z0→z1 düşey yüzey; pin: nokta işareti;
+   *  mesh: eğik/eğrisel yüzey (faces), z0/z1 en düşük/en yüksek nokta. */
+  kind: 'prism' | 'flat' | 'ribbon' | 'pin' | 'mesh';
   /** Elemanın ait olduğu metraj kalemleri (poz). */
   items: string[];
   /** Kalem başına hesap detayındaki satır: satır adı ya da sırası. */
@@ -28,6 +32,8 @@ export interface El3 {
   loops?: [number, number][][];
   /** ribbon: çizgi; pin: tek nokta */
   path?: [number, number][];
+  /** mesh: düzlemsel dışbükey çokgenler, her köşe [x, y, z] */
+  faces?: [number, number, number][][];
   closed?: boolean;
   z0: number;
   z1: number;
@@ -37,6 +43,13 @@ export interface Model3 {
   generatedAt: string;
   origin: [number, number]; // mm, çizim koordinatı
   elements: El3[];
+}
+
+/** Plan altlığı (01-02-100 çizgileri): kat başına katman katman çoklu çizgiler, [x, y, x, y, …] cm, model orijinine göre. */
+export interface Underlay {
+  plans: { key: string; label: string; z: number }[];
+  /** texts: [x, y, yükseklik (cm), yazı, ortalı?] — yatay; ortalı değilse (x, y) sol alt köşe (taban çizgisi). */
+  layers: { name: string; lines: Record<string, number[][]>; texts?: Record<string, [number, number, number, string, 1?][]> }[];
 }
 
 /** Kalemin 3B'de vurgulanacak pozları: kendisi + formülünde geçen kalemler (özyinelemeli). */

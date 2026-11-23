@@ -33,6 +33,7 @@ export const createItemSchema = scope.extend({
   reason: z.string(),
 });
 export const cancelItemSchema = scope.extend({ itemId, reason: z.string() });
+export const restoreItemSchema = cancelItemSchema;
 export const updateItemInfoSchema = scope.extend({
   itemId,
   name: z.string().max(500).optional(),
@@ -41,6 +42,10 @@ export const updateItemInfoSchema = scope.extend({
   method: text.optional(),
   confidence: confidence.optional(),
   drawings: z.array(z.string()).max(100).optional(),
+  specs: z
+    .array(z.object({ label: z.string().trim().min(1).max(200), value: z.string().trim().max(500).nullable(), source: z.string().trim().max(300).optional() }))
+    .max(60)
+    .optional(),
   reason: text.optional(),
 });
 const optText = z.string().max(500).nullable().optional();

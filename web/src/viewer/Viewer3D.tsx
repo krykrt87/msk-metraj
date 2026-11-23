@@ -7,6 +7,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { LAYERS3, type El3, type Layer3, type Model3 } from '@shared/model3d';
 import { measure, nearestVertex, type V3 } from './geometry';
 import { geometryOf } from './sceneGeometry';
+import { useUnderlay } from './useModel3d';
 
 const COLORS: Record<Layer3, number> = {
   döşeme: 0xc9ccc7,
@@ -24,6 +25,21 @@ const fmt = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFr
 
 type Meas = { a: V3; b: V3; line: THREE.Line; label: HTMLDivElement };
 type Mode = 'seç' | 'ölç';
+type UlPrefs = { plans: Record<string, boolean>; off: string[] };
+const UL_KEY = 'v3-altlik';
+const UL_PLANS = [
+  { key: 'zemin', label: 'Zemin kat planı' },
+  { key: 'ara', label: 'Ara kat planı' },
+];
+const readUl = (): UlPrefs => {
+  try {
+    const v = JSON.parse(localStorage.getItem(UL_KEY) ?? 'null') as UlPrefs | null;
+    if (v?.plans && Array.isArray(v.off)) return v;
+  } catch {
+    /* tarayıcı depolaması yok */
+  }
+  return { plans: {}, off: [] };
+};
 
 export default function Viewer3D({
   model,
@@ -60,14 +76,21 @@ export default function Viewer3D({
     scene: THREE.Scene;
     fit: (objs: THREE.Object3D[]) => void;
     applyStyle: () => void;
+    setWalk: (on: boolean) => void;
+    shot: () => void;
   } | null>(null);
+  const [walk, setWalk] = useState(false);
   const [layers, setLayers] = useState<Record<string, boolean>>(() => Object.fromEntries(LAYERS3.map((l) => [l.key, l.visible])));
   const [mode, setMode] = useState<Mode>('seç');
   const [picked, setPicked] = useState<El3 | null>(null);
   const [backend, setBackend] = useState('');
   const [hint, setHint] = useState('');
   const [error, setError] = useState('');
-  const state = useRef({ layers, highlight, mode, picked: null as El3 | null, focusIds: null as Set<string> | null | undefined });
+  const [ul, setUl] = useState<UlPrefs>(readUl);
+  const ulOn = Object.values(ul.plans).some(Boolean);
+  const { underlay, error: ulError } = useUnderlay(ulOn);
+  const ulObjs = useRef<{ plan: string; layer: string; obj: THREE.Object3D }[]>([]);
+  const state = useRef({ layers, highlight, mode, picked: null as El3 | null, focusIds: null as Set<string> | null | undefined, walk: false });
   state.current.layers = layers;
   state.current.highlight = highlight;
   state.current.mode = mode;
@@ -128,6 +151,7 @@ export default function Viewer3D({
 
     const box = new THREE.Box3();
     const fit = (objs: THREE.Object3D[]) => {
+      if (state.current.walk) walkMode(false); // sığdırma yörünge görünümüdür
       box.makeEmpty();
       for (const o of objs) box.expandByObject(o);
       if (box.isEmpty()) return;
@@ -166,7 +190,82 @@ export default function Viewer3D({
     controls.enableDamping = true;
     controls.dampingFactor = 0.12;
     controls.screenSpacePanning = true;
-    api.current = { meshes, camera, controls, scene, fit, applyStyle };
+
+    // --- gezme: göz yüksekliğinde birinci şahıs; sürükle = bak, tuşlar = yürü (duvarlardan geçilir)
+    const keys = new Set<string>();
+    const look = { yaw: 0, pitch: 0 };
+    const lookDir = () => new THREE.Vector3(Math.cos(look.pitch) * Math.cos(look.yaw), Math.cos(look.pitch) * Math.sin(look.yaw), Math.sin(look.pitch));
+    const aim = () => camera.lookAt(camera.position.clone().add(lookDir()));
+    const walkMode = (on: boolean) => {
+      if (on === state.current.walk) return;
+      state.current.walk = on;
+      setWalk(on);
+      keys.clear();
+      if (on) {
+        // yörünge merkezinin üstünde, zemin kat göz yüksekliğinde (±0,00 + 1,60), aynı yöne bakarak başla
+        const d = controls.target.clone().sub(camera.position);
+        look.yaw = Math.atan2(d.y, d.x);
+        look.pitch = 0;
+        camera.position.set(controls.target.x, controls.target.y, 1.6);
+        camera.near = 0.1;
+        camera.updateProjectionMatrix();
+        controls.enabled = false;
+        aim();
+      } else {
+        controls.target.copy(camera.position).addScaledVector(lookDir(), 10);
+        controls.enabled = true;
+        controls.update();
+      }
+      renderer.domElement.style.cursor = on ? 'grab' : '';
+    };
+    const held = (...codes: string[]) => (codes.some((c) => keys.has(c)) ? 1 : 0);
+    const walkStep = (dt: number) => {
+      const f = held('KeyW', 'ArrowUp') - held('KeyS', 'ArrowDown');
+      const s = held('KeyD', 'ArrowRight') - held('KeyA', 'ArrowLeft');
+      const u = held('KeyE', 'PageUp') - held('KeyQ', 'PageDown');
+      if (!f && !s && !u) return;
+      const step = (held('ShiftLeft', 'ShiftRight') ? 12 : 3) * dt; // m/s
+      const [fx, fy] = [Math.cos(look.yaw), Math.sin(look.yaw)]; // yatay ileri; sağ = (fy, −fx)
+      camera.position.x += (fx * f + fy * s) * step;
+      camera.position.y += (fy * f - fx * s) * step;
+      camera.position.z += u * step;
+      aim();
+    };
+    const typing = (e: KeyboardEvent) => !!(e.target as HTMLElement)?.closest?.('input, textarea, select, [contenteditable]');
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!state.current.walk || typing(e)) return;
+      keys.add(e.code);
+      if (/^(Arrow|Page)/.test(e.code)) e.preventDefault();
+    };
+    const onKeyUp = (e: KeyboardEvent) => keys.delete(e.code);
+    const onBlur = () => keys.clear();
+    const onWheel = (e: WheelEvent) => {
+      if (!state.current.walk) return;
+      e.preventDefault();
+      camera.position.x -= Math.cos(look.yaw) * e.deltaY * 0.01;
+      camera.position.y -= Math.sin(look.yaw) * e.deltaY * 0.01;
+      aim();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+
+    // --- görüntü al: bakılan açıdan PNG (çizim ile okuma aynı adımda; WebGPU/WebGL tamponu sonra boşalır)
+    const shot = () => {
+      renderer.render(scene, camera);
+      renderer.domElement.toBlob((b) => {
+        if (!b) return setError('Görüntü alınamadı.');
+        const p = (n: number) => String(n).padStart(2, '0');
+        const t = new Date();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(b);
+        a.download = `MSK-3B-${t.getFullYear()}${p(t.getMonth() + 1)}${p(t.getDate())}-${p(t.getHours())}${p(t.getMinutes())}${p(t.getSeconds())}.png`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      }, 'image/png');
+    };
+    api.current = { meshes, camera, controls, scene, fit, applyStyle, setWalk: walkMode, shot };
 
     // --- tıklama / ölçüm
     const ray = new THREE.Raycaster();
@@ -232,6 +331,11 @@ export default function Viewer3D({
       setHint('Birinci noktayı tıklayın');
     };
     const onMove = (ev: PointerEvent) => {
+      if (state.current.walk && ev.buttons & 1) {
+        look.yaw -= ev.movementX * 0.004;
+        look.pitch = Math.max(-1.5, Math.min(1.5, look.pitch - ev.movementY * 0.004));
+        aim();
+      }
       if (state.current.mode !== 'ölç') return;
       const h = hitAt(ev);
       snap.visible = !!h;
@@ -273,8 +377,12 @@ export default function Viewer3D({
         ro.observe(el);
         applyStyle();
         fit(meshes);
+        let last = performance.now();
         renderer.setAnimationLoop(() => {
-          controls.update();
+          const now = performance.now();
+          if (state.current.walk) walkStep(Math.min(0.1, (now - last) / 1000));
+          else controls.update();
+          last = now;
           const w = el.clientWidth;
           const h = el.clientHeight;
           for (const m of meas.current.list) place([(m.a[0] + m.b[0]) / 2, (m.a[1] + m.b[1]) / 2, (m.a[2] + m.b[2]) / 2], m.label, w, h);
@@ -290,6 +398,12 @@ export default function Viewer3D({
       renderer.domElement.removeEventListener('pointerdown', onDown);
       renderer.domElement.removeEventListener('pointerup', onUp);
       renderer.domElement.removeEventListener('pointermove', onMove);
+      renderer.domElement.removeEventListener('wheel', onWheel);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+      state.current.walk = false;
+      setWalk(false);
       controls.dispose();
       for (const m of meshes) m.geometry.dispose();
       for (const m of meas.current.list) m.label.remove();
@@ -299,6 +413,75 @@ export default function Viewer3D({
       api.current = null;
     };
   }, [model]);
+
+  // --- plan altlığı: katman × kat başına bir çizgi nesnesi (tıklanmaz, sığdırmaya girmez)
+  useEffect(() => {
+    const a = api.current;
+    if (!a || !underlay) return;
+    const mat = new THREE.LineBasicMaterial({ color: 0x3d4650, transparent: true, opacity: 0.55 });
+    const objs: typeof ulObjs.current = [];
+    // yazı: tuval dokulu düzlem, plan üzerinde yatay; sol alt köşe = ekleme noktası (taban çizgisi)
+    const PX = 64;
+    const textMesh = (x: number, y: number, h: number, s: string, z: number, centered: boolean) => {
+      const c = document.createElement('canvas');
+      const ctx = c.getContext('2d')!;
+      const font = `${PX}px sans-serif`;
+      ctx.font = font;
+      c.width = Math.ceil(ctx.measureText(s).width) + 4;
+      c.height = Math.round(PX * 1.25);
+      ctx.font = font;
+      ctx.fillStyle = '#1f262d';
+      ctx.fillText(s, 2, PX);
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const k = h / PX;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(c.width * k, c.height * k), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+      // ortalı (aks balonu): büyük harf ortası tuvalin ortasına denk gelir
+      if (centered) m.position.set(x, y, z);
+      else m.position.set(x + (c.width * k) / 2, y - 0.25 * h + (c.height * k) / 2, z);
+      return m;
+    };
+    for (const L of underlay.layers)
+      for (const plan of underlay.plans) {
+        const lines = L.lines[plan.key] ?? [];
+        const texts = L.texts?.[plan.key] ?? [];
+        if (!lines.length && !texts.length) continue;
+        const obj = new THREE.Group();
+        if (lines.length) {
+          const pos: number[] = [];
+          for (const l of lines)
+            for (let i = 2; i < l.length; i += 2) pos.push(l[i - 2] / 100, l[i - 1] / 100, plan.z, l[i] / 100, l[i + 1] / 100, plan.z);
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+          obj.add(new THREE.LineSegments(g, mat));
+        }
+        for (const [x, y, h, s, c] of texts) obj.add(textMesh(x / 100, y / 100, h / 100, s, plan.z + 0.005, !!c));
+        obj.visible = false;
+        a.scene.add(obj);
+        objs.push({ plan: plan.key, layer: L.name, obj });
+      }
+    ulObjs.current = objs;
+    return () => {
+      for (const o of objs) {
+        a.scene.remove(o.obj);
+        o.obj.traverse((c) => {
+          if (c instanceof THREE.Mesh) (c.geometry.dispose(), c.material.map?.dispose(), c.material.dispose());
+          else if (c instanceof THREE.LineSegments) c.geometry.dispose();
+        });
+      }
+      mat.dispose();
+      ulObjs.current = [];
+    };
+  }, [model, underlay]);
+  useEffect(() => {
+    const off = new Set(ul.off);
+    for (const o of ulObjs.current) o.obj.visible = !!ul.plans[o.plan] && !off.has(o.layer);
+    try {
+      localStorage.setItem(UL_KEY, JSON.stringify(ul));
+    } catch {
+      /* tarayıcı depolaması yok */
+    }
+  }, [ul, underlay, model]);
 
   // --- vurgulama, katmanlar, seçili eleman
   useEffect(() => {
@@ -347,7 +530,8 @@ export default function Viewer3D({
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest('input, textarea, select, [contenteditable]')) return;
       if (e.key === 'Escape') {
-        if (meas.current.start) {
+        if (state.current.walk) api.current?.setWalk(false);
+        else if (meas.current.start) {
           meas.current.start = null;
           if (meas.current.preview) (api.current?.scene.remove(meas.current.preview), (meas.current.preview = null));
           setHint('Birinci noktayı tıklayın');
@@ -355,6 +539,7 @@ export default function Viewer3D({
         else if (state.current.picked) setPicked(null);
         else if (state.current.highlight?.size) clearSel.current();
       } else if (e.key === 'm' || e.key === 'M') setMode((m) => (m === 'ölç' ? 'seç' : 'ölç'));
+      else if (e.key === 'g' || e.key === 'G') api.current?.setWalk(!state.current.walk);
       else if (e.key === 'f' || e.key === 'F') {
         const a = api.current;
         if (a) a.fit(a.meshes.filter((m) => m.visible && !m.userData.ghost));
@@ -382,6 +567,12 @@ export default function Viewer3D({
         <button type="button" onClick={clearMeas}>
           Ölçümleri sil
         </button>
+        <button type="button" className={walk ? 'on' : ''} aria-pressed={walk} onClick={() => api.current?.setWalk(!walk)} title="Göz yüksekliğinde gez · Kısayol: G">
+          Gez
+        </button>
+        <button type="button" onClick={() => api.current?.shot()} title="Bakılan açıdan PNG indirir">
+          Görüntü al
+        </button>
         {!!highlight?.size && (
           <button type="button" className="v3-clear" onClick={onClearSelection} title="Kısayol: Esc">
             Seçimi kaldır ×
@@ -389,21 +580,65 @@ export default function Viewer3D({
         )}
         {backend && <span className="v3-badge">{backend}</span>}
       </div>
-      <fieldset className="v3-layers">
-        <legend>Katmanlar</legend>
-        {LAYERS3.map((l) => (
-          <label key={l.key} className="check">
-            <input type="checkbox" checked={layers[l.key]} onChange={(e) => setLayers((s) => ({ ...s, [l.key]: e.target.checked }))} />
-            {l.label}
-          </label>
-        ))}
-      </fieldset>
-      {hint && <p className="v3-hint">{hint}</p>}
+      <div className="v3-side">
+        <fieldset className="v3-layers">
+          <legend>Katmanlar</legend>
+          {LAYERS3.map((l) => (
+            <label key={l.key} className="check">
+              <input type="checkbox" checked={layers[l.key]} onChange={(e) => setLayers((s) => ({ ...s, [l.key]: e.target.checked }))} />
+              {l.label}
+            </label>
+          ))}
+        </fieldset>
+        <fieldset className="v3-layers">
+          <legend>Altlık (01-02-100)</legend>
+          {UL_PLANS.map((p) => (
+            <label key={p.key} className="check">
+              <input type="checkbox" checked={!!ul.plans[p.key]} onChange={(e) => setUl((s) => ({ ...s, plans: { ...s.plans, [p.key]: e.target.checked } }))} />
+              {p.label}
+            </label>
+          ))}
+          {underlay && (
+            <details className="v3-ul-layers">
+              <summary>
+                Çizim katmanları ({underlay.layers.filter((l) => !ul.off.includes(l.name)).length}/{underlay.layers.length})
+              </summary>
+              <div className="v3-ul-all">
+                <button type="button" onClick={() => setUl((s) => ({ ...s, off: [] }))}>
+                  Tümü
+                </button>
+                <button type="button" onClick={() => setUl((s) => ({ ...s, off: underlay.layers.map((l) => l.name) }))}>
+                  Hiçbiri
+                </button>
+              </div>
+              <div className="v3-ul-list">
+                {underlay.layers.map((l) => (
+                  <label key={l.name} className="check" title={l.name}>
+                    <input
+                      type="checkbox"
+                      checked={!ul.off.includes(l.name)}
+                      onChange={(e) => setUl((s) => ({ ...s, off: e.target.checked ? s.off.filter((n) => n !== l.name) : [...s.off, l.name] }))}
+                    />
+                    {l.name}
+                  </label>
+                ))}
+              </div>
+            </details>
+          )}
+          {ulOn && !underlay && !ulError && <span className="v3-ul-note">yükleniyor…</span>}
+          {ulError && <span className="v3-ul-note warn">{ulError}</span>}
+        </fieldset>
+      </div>
+      {(walk || hint) && (
+        <p className="v3-hint">{[walk && 'Gezme · sürükle: bak · W A S D / oklar: yürü · Q / E: alçal / yüksel · Shift: hızlı · tekerlek: ileri / geri · Esc: çık', hint].filter(Boolean).join(' | ')}</p>
+      )}
       {noMatch && <p className="v3-hint warn">Bu kalemin 3B karşılığı yok (görünüş ya da detaydan ölçüldü).</p>}
       {error && <p className="v3-hint warn">{error}</p>}
       {picked && (
         <div className="v3-info">
-          <p className="v3-info-title">{picked.label}</p>
+          <p className="v3-info-title">
+            <span className="v3-id">{picked.id}</span> {picked.label}
+          </p>
           <p className="v3-info-sub">
             Kot {fmt.format(picked.z0)}
             {picked.z1 !== picked.z0 ? ` → ${fmt.format(picked.z1)}` : ''} m

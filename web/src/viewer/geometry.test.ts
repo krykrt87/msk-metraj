@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { highlightPoz } from '@shared/model3d';
-import { measure, nearestVertex, ribbonPositions, splitShapes } from './geometry';
+import { measure, meshPositions, nearestVertex, ribbonPositions, splitShapes } from './geometry';
+
+describe('meshPositions', () => {
+  it('dörtgen iki, üçgen bir üçgen; z korunur', () => {
+    const p = meshPositions([[[0, 0, 1], [1, 0, 1], [1, 1, 2], [0, 1, 2]], [[0, 0, 0], [1, 0, 0], [0, 1, 5]]]);
+    expect(p.length).toBe(3 * 9);
+    expect(Math.max(...p.filter((_, i) => i % 3 === 2))).toBe(5);
+  });
+});
 
 describe('splitShapes', () => {
   it('en büyük halka dış, içindekiler boşluk, dışındakiler ayrı şekil', () => {

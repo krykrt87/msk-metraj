@@ -50,6 +50,17 @@ export interface Item {
   sources?: { drawing: string; where: string }[];
   /** Varsayım, belirsizlik, proje hatası notları. */
   notes?: string[];
+  /** Malzeme özellikleri (sipariş için teknik özellikler); value null = projede yok, tanımlanmalı. */
+  specs?: Spec[];
+  /** Özellikler uygulamada elle düzenlendi; DWG aktarımı bunları korur. */
+  specsManual?: boolean;
+}
+
+export interface Spec {
+  label: string;
+  value: string | null;
+  /** Değerin alındığı pafta / detay. */
+  source?: string;
 }
 
 /**
@@ -75,6 +86,8 @@ export interface CalcRow {
   angle?: number;
   sign: 1 | -1;
   value: number;
+  /** Bu satırı veren 3B eleman (ör. CEP-142): satır ↔ eleman birebir. */
+  ref?: string;
 }
 
 export interface Room {
@@ -154,6 +167,7 @@ export type HistoryAction =
   | 'acknowledge'
   | 'create'
   | 'cancel'
+  | 'restore'
   | 'info'
   | 'cascade'
   | 'room'
@@ -219,6 +233,7 @@ export const ACTION_LABEL: Record<HistoryAction, string> = {
   acknowledge: 'Uyarı onayı',
   create: 'Yeni kalem',
   cancel: 'İptal',
+  restore: 'İptal geri alındı',
   info: 'Bilgi değişikliği',
   cascade: 'Bağlı değişiklik',
   room: 'Mahal değişikliği',

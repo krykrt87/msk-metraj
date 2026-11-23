@@ -30,6 +30,7 @@ export const unlockItem = callable(s.unlockItemSchema, items.unlockItem);
 export const acknowledgeItem = callable(s.acknowledgeItemSchema, items.acknowledgeItem);
 export const createItem = callable(s.createItemSchema, items.createItem);
 export const cancelItem = callable(s.cancelItemSchema, items.cancelItem);
+export const restoreItem = callable(s.restoreItemSchema, items.restoreItem);
 export const updateItemInfo = callable(s.updateItemInfoSchema, items.updateItemInfo);
 export const updateRoom = callable(s.updateRoomSchema, sources.updateRoom);
 export const updateFacadeCell = callable(s.updateFacadeCellSchema, sources.updateFacadeCell);

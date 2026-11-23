@@ -1,5 +1,5 @@
 import { formatTr } from '@shared/number';
-import { ACTION_LABEL, LOCK_WARNING_LABEL, STATUS_LABEL, type HistoryEntry, type LockWarning, type Status } from '@shared/types';
+import { ACTION_LABEL, LOCK_WARNING_LABEL, STATUS_LABEL, type HistoryEntry, type LockWarning, type Spec, type Status } from '@shared/types';
 import { formatDateTime } from '../data/types';
 
 const FIELD_LABEL: Record<string, string> = {
@@ -14,6 +14,7 @@ const FIELD_LABEL: Record<string, string> = {
   unit: 'Birim',
   method: 'Hesap yöntemi',
   drawings: 'Paftalar',
+  specs: 'Malzeme özellikleri',
   cancelled: 'İptal',
   area: 'Alan',
   '': 'Kayıt',
@@ -38,6 +39,7 @@ function show(field: string, v: unknown, unit?: string): string {
   if (field === 'lockWarning') return LOCK_WARNING_LABEL[v as Exclude<LockWarning, null>] ?? String(v);
   if (field === 'kind') return v === 'derived' ? 'Türetilen' : 'Ölçülen';
   if (field === 'cancelled') return v ? 'Evet' : 'Hayır';
+  if (field === 'specs' && Array.isArray(v)) return (v as Spec[]).map((s) => `${s.label}: ${s.value ?? '—'}`).join('; ') || '—';
   if (Array.isArray(v)) return v.map((c) => String(c).replace(/^4199-A-DD-/, '')).join(', ') || '—';
   if (typeof v === 'object') return 'yeni kayıt';
   return String(v);
@@ -49,6 +51,7 @@ export function historyTitle(e: HistoryEntry): string {
 }
 
 export function HistoryList({ entries, unit }: { entries: (HistoryEntry & { id: string })[]; unit?: string }) {
+  entries = entries.filter((e) => e.field !== 'specsManual'); // iç işaret, kullanıcıya gösterilmez
   if (entries.length === 0) return <p className="hint">Henüz değişiklik yok.</p>;
   return (
     <ol className="history">

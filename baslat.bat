@@ -15,28 +15,21 @@ if not exist node_modules (
   call npm install
 )
 
-rem Emülatörler (Firebase'in yerel kopyası) kapalıysa başlat
-powershell -NoProfile -Command "try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:4000 -TimeoutSec 2 | Out-Null; exit 0 } catch { exit 1 }"
-if errorlevel 1 (
-  echo Firebase emülatörleri başlatılıyor...
-  start "MSK Metraj - Emulatorler - kapatmak icin Ctrl+C" cmd /k "npm run emulators"
-)
-
 rem Uygulama sunucusu kapalıysa başlat
 powershell -NoProfile -Command "try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5173 -TimeoutSec 2 | Out-Null; exit 0 } catch { exit 1 }"
 if errorlevel 1 (
   echo Uygulama sunucusu başlatılıyor...
-  start "MSK Metraj - Uygulama" /min cmd /k "npx vite --host 127.0.0.1"
+  start "MSK Metraj - Uygulama" /min cmd /k "npx vite --mode yerel --host 127.0.0.1"
 )
 
 echo Hazır olması bekleniyor...
 set /a deneme=0
 :bekle
-powershell -NoProfile -Command "try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5173 -TimeoutSec 2 | Out-Null; Invoke-WebRequest -UseBasicParsing http://127.0.0.1:4000 -TimeoutSec 2 | Out-Null; exit 0 } catch { exit 1 }"
+powershell -NoProfile -Command "try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5173 -TimeoutSec 2 | Out-Null; exit 0 } catch { exit 1 }"
 if not errorlevel 1 goto hazir
 set /a deneme+=1
 if %deneme% geq 90 (
-  echo Sunucular 3 dakikada açılmadı. "MSK Metraj - Emulatorler" penceresindeki hatayı kontrol edin.
+  echo Uygulama sunucusu 3 dakikada açılmadı. "MSK Metraj - Uygulama" penceresindeki hatayı kontrol edin.
   pause
   exit /b 1
 )
@@ -47,6 +40,6 @@ goto bekle
 start "" http://127.0.0.1:5173
 echo.
 echo Uygulama açıldı: http://127.0.0.1:5173
-echo Kapatırken "Emulatorler" penceresinde Ctrl+C'ye basın; yaptığınız değişiklikler o zaman kaydedilir.
+echo Yerel mod: veri work\ klasöründen okunur, değişiklik kaydedilmez. Metrajı yeniden ürettikten sonra sayfayı yenileyin.
 timeout /t 8 >nul
 exit /b 0

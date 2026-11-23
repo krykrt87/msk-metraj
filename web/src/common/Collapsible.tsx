@@ -6,7 +6,14 @@ export function Collapsible({ text, limit = 90 }: { text: string; limit?: number
   if (!text) return <>—</>;
   if (text.length <= limit) return <>{text}</>;
   return (
-    <button type="button" className={`collapsible${open ? ' open' : ''}`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+    <button
+      type="button"
+      className={`collapsible${open ? ' open' : ''}`}
+      aria-expanded={open}
+      // tıklanabilir satır içinde (cetvel) satırın tıklamasını tetiklemesin
+      onClick={(e) => (e.stopPropagation(), setOpen((o) => !o))}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
       <span className="col-text">{open ? text : `${text.slice(0, limit).trimEnd()}…`}</span>
       <span className="col-toggle">{open ? 'Kısalt' : 'Devamını göster'}</span>
     </button>

@@ -44,7 +44,7 @@ describe('Breakdown (cetvel)', () => {
     render(<Breakdown item={it2} />);
     expect(screen.queryByRole('columnheader', { name: 'Kenar a (m)' })).toBeNull();
     const arc = screen.getByText('Yay').closest('tr')!;
-    expect(within(arc).getByText('adet × r × θ (radyan)')).toBeInTheDocument();
+    expect(within(arc).queryByText('adet × r × θ (radyan)')).toBeNull(); // kural metni gösterilmez
     expect(within(arc).getAllByRole('cell').map((c) => c.textContent)).toEqual(expect.arrayContaining(['5,00', '180,00', 'm']));
     const wall = screen.getByText('Duvar parçası').closest('tr')!;
     expect(within(wall).getAllByRole('cell').map((c) => c.textContent)).toEqual(expect.arrayContaining(['0,20', '12,40', 'm']));
@@ -69,5 +69,24 @@ describe('Breakdown (cetvel)', () => {
     expect(onLine).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByText('GF-03 SALON 01').closest('tr')!);
     expect(onLine).toHaveBeenCalledTimes(2);
+  });
+  it('kendi 3B elemanını taşıyan cetvel satırı: elemanla vurgulanır, tıklanınca eleman bildirilir', () => {
+    const it3 = {
+      ...item,
+      breakdown: [{ label: 'Kuzeybatı görünüşü', value: 10, unit: 'm²', calc: [
+        { kind: 'dikdörtgen', label: '', name: 'A önü', adet: 1, en: 2, boy: 3, sign: 1, value: 6, ref: 'CEP-1' },
+        { kind: 'dikdörtgen', label: '', name: 'B önü', adet: 1, en: 2, boy: 2, sign: 1, value: 4, ref: 'CEP-2' },
+      ] }],
+    } as unknown as Item;
+    const onRow = vi.fn();
+    render(<Breakdown item={it3} focus={0} focusRef="CEP-2" onRowClick={onRow} />);
+    const own = screen.getByText('CEP-2').closest('tr')!;
+    expect(own.className).toContain('focus');
+    expect(own.querySelector('.part-name')!.textContent).not.toContain('B önü'); // açıklamada yalnız kimlik
+    expect(own.querySelector('.note')!.textContent).toBe('Dikdörtgen – B önü');
+    expect(screen.getByText('CEP-1').closest('tr')!.className).not.toContain('focus');
+    expect(screen.getByText('Kuzeybatı görünüşü').closest('tr')!.className).not.toContain('focus');
+    fireEvent.click(screen.getByText('CEP-1').closest('tr')!);
+    expect(onRow).toHaveBeenCalledWith(0, 'CEP-1');
   });
 });

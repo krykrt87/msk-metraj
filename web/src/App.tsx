@@ -4,7 +4,9 @@ import { can } from '@shared/access';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
 import { LoginPage } from './auth/LoginPage';
 import { auth } from './firebase';
+import { LOCAL } from './local';
 import { Shell } from './layout/Shell';
+import { MalzemePage } from './malzeme/MalzemePage';
 import { MetrajPage } from './metraj/MetrajPage';
 
 function Pending({ title }: { title: string }) {
@@ -18,7 +20,7 @@ function Pending({ title }: { title: string }) {
 
 function Gate() {
   const { user, profile, loading } = useAuth();
-  const out = () => signOut(auth);
+  const out = () => (LOCAL ? undefined : signOut(auth));
   if (loading) return <p className="center-note">Yükleniyor…</p>;
   if (!user) return <LoginPage signIn={(e, p) => signInWithEmailAndPassword(auth, e, p)} />;
   if (!profile || !can(profile, 'view')) {
@@ -35,7 +37,7 @@ function Gate() {
     <Shell profile={profile} onSignOut={out}>
       <Routes>
         <Route path="/" element={<MetrajPage profile={profile} />} />
-        <Route path="/malzeme" element={<Pending title="Malzeme Listesi" />} />
+        <Route path="/malzeme" element={<MalzemePage profile={profile} />} />
         <Route path="/mahal" element={<Pending title="Mahal Listesi" />} />
         <Route path="/cephe" element={<Pending title="Cephe" />} />
         <Route path="/proje-kontrol" element={<Pending title="Proje Kontrol" />} />

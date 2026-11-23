@@ -39,6 +39,13 @@ export function ribbonPositions(path: V2[], closed: boolean, z0: number, z1: num
   return out;
 }
 
+/** Düzlemsel dışbükey çokgenleri yelpaze üçgenlerine böler (x, y, z düz dizi). */
+export function meshPositions(faces: V3[][]): Float32Array {
+  const out: number[] = [];
+  for (const f of faces) for (let i = 1; i + 1 < f.length; i++) out.push(...f[0], ...f[i], ...f[i + 1]);
+  return new Float32Array(out);
+}
+
 export function measure(a: V3, b: V3): { d: number; horizontal: number; dz: number } {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];

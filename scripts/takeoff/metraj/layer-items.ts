@@ -7,7 +7,8 @@ const D101 = '4199-A-DD-02-09-101';
 type F = { topic: string; drawings: string; finding: string; suggestion: string };
 
 function layer(poz: string, group: string, name: string, unit: string, formula: string, method: string, src: { drawing: string; where: string }[], stack: Line[], notes: string[] = [], conf: 'Yüksek' | 'Orta' | 'Düşük' = 'Orta'): TakeoffItem {
-  return { poz, group, name, unit, value: null, formula, method, sources: src, confidence: conf, lines: stack, notes };
+  // kopya: build formül satırını lines'a ekliyor; ortak dizi aynı dizilimin bütün kalemlerine yığılırdı
+  return { poz, group, name, unit, value: null, formula, method, sources: src, confidence: conf, lines: [...stack], notes };
 }
 
 export function layerItems(): { items: TakeoffItem[]; findings: F[] } {
@@ -25,8 +26,8 @@ export function layerItems(): { items: TakeoffItem[]; findings: F[] } {
     st('UZAY KAFES', null),
   ];
   const sfSrc = [{ drawing: D101, where: 'salon çatısı ve kabuk duvar kesiti (dizilim etiketleri)' }];
-  const sfM = 'Uzay kafes çatı dizilimi sistem detayından (02-09-101). Katman alanı salon çatı örtüsü alanına (B.2, parapet içi izdüşüm) eşittir.';
-  const sfNote = ['Çatı eğrisel (kenarda ~%11–12); gerçek yüzey izdüşümden biraz fazladır.'];
+  const sfM = 'Uzay kafes çatı dizilimi sistem detayından (02-09-101). Katman alanı salon çatı örtüsü alanına (B.2, parapet içi eğik yüzey) eşittir.';
+  const sfNote = ['B.2 eğik yüzeyin gerçek alanıdır (izdüşümden ≈%2 fazla).'];
   items.push(layer('B.2.1', 'B', 'TPU membran', 'm²', 'B.2', sfM, sfSrc, sfStack, sfNote));
   items.push(layer('B.2.2', 'B', 'Su yalıtımı (uzay kafes çatı)', 'm²', 'B.2', sfM, sfSrc, sfStack, sfNote));
   items.push(layer('B.2.3', 'B', 'Çimento esaslı levha – üst, 2 kat', 'm²', 'B.2 * 2', `${sfM} Üstte 2 kat levha olduğu için alan × 2.`, sfSrc, sfStack, sfNote));

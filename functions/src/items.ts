@@ -1,7 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { FormulaError, formulaDeps, parseFormula, POZ_PATTERN } from '../../shared/formula/parse';
-import type { Confidence } from '../../shared/types';
+import type { Confidence, Spec } from '../../shared/types';
 import { commitChange } from './commit';
 import { assertEditable, itemIn, requireReason, requireRole, type Caller } from './context';
 
@@ -158,10 +158,21 @@ export async function cancelItem(db: Firestore, caller: Caller, input: Scope & {
   });
 }
 
+/** İptali geri alır; türetilen kalemin formülü yeniden hesaplanır (formülü iptal edilmiş bir kaleme bağlıysa reddedilir). */
+export async function restoreItem(db: Firestore, caller: Caller, input: Scope & { itemId: string; reason: string }): Result {
+  requireRole(caller, [...EDITORS]);
+  const reason = requireReason(input.reason);
+  return commitChange(db, caller, input.projectId, input.discipline, { action: 'restore', target: { type: 'item', id: input.itemId }, reason }, (s) => {
+    const it = itemIn(s, input.itemId);
+    if (!it.cancelled) throw new HttpsError('failed-precondition', 'Kalem iptal edilmemiş.');
+    it.cancelled = false;
+  });
+}
+
 export async function updateItemInfo(
   db: Firestore,
   caller: Caller,
-  input: Scope & { itemId: string; name?: string; code?: string | null; unit?: string; method?: string; confidence?: Confidence; drawings?: string[]; reason?: string },
+  input: Scope & { itemId: string; name?: string; code?: string | null; unit?: string; method?: string; confidence?: Confidence; drawings?: string[]; specs?: Spec[]; reason?: string },
 ): Result {
   requireRole(caller, [...EDITORS]);
   return commitChange(
@@ -179,6 +190,13 @@ export async function updateItemInfo(
       if (input.method !== undefined) it.method = input.method.trim();
       if (input.confidence !== undefined) it.confidence = input.confidence;
       if (input.drawings !== undefined) it.drawings = input.drawings;
+      if (input.specs !== undefined) {
+        const specs = input.specs.map((x) => ({ label: x.label, value: x.value || null, ...(x.source ? { source: x.source } : {}) }));
+        if (JSON.stringify(specs) !== JSON.stringify(it.specs ?? [])) {
+          it.specs = specs;
+          it.specsManual = true;
+        }
+      }
     },
   );
 }

@@ -1,17 +1,125 @@
 // Zemin kat planından (01-02-100) çıkan kalemler: alanlar, duvarlar, kapılar, taşıyıcılar, hareketli bölme.
-import { extractDoors } from '../doors';
+import { extractDoors, type Door } from '../doors';
 import type { RawDxf } from '../lib/dxf';
 import type { Flat } from '../lib/flatten';
-import { area, bbox, length, pointInPolygon, regionArea, type P } from '../lib/geom';
+import { area, bbox, clipConvex, length, pointInPolygon, regionArea, type P } from '../lib/geom';
 import { decomposeArea, decomposeLength, decomposeRegion, mergeRows, type CalcRow } from '../lib/decompose';
 import type { RoomRow, TakeoffItem } from './model';
-import { model3d } from './model3d';
+import { ShapeUtils, Vector2 } from 'three';
+import { model3d, type Raw3 } from './model3d';
 import { roomsNear } from './rooms-index';
 
 const GF = '4199-A-DD-01-02-100';
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
-export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pts: P[]; verts?: { x: number; y: number; bulge: number }[]; area: number }): TakeoffItem[] {
+/**
+ * Planda bazı kapıların (ör. küçük salon girişleri) önünde duvar taraması kesilmeden devam ediyor. 3B'de açıklık duvardan
+ * çıkarılır, üstünde kapı yüksekliğinden duvar üstüne lento kalır. Açıklık: kapı bloğu çizgilerinin duvar boyunca uzanımı ×
+ * kapı noktasından ±0,40 m. Kesilen duvar önce üçgenlere bölünür (boşluklu/içbükey taramada kesme çizgisi sahte yüzey
+ * bırakmasın diye; dışbükey parça dışbükey bölgeyle kırpılınca tek parça kalır), sonra mesh olarak çizilir.
+ * Taraması kapıda kesik olan (iki yanında duvar biten) kapılarda da açıklığın üstüne aynı lento eklenir.
+ * G.1/G.2 değişmez; duvar yüzey alanı (G.3.x) açıklıkları kullanır: kesik taramaya lento eklenir, kesilmeyenden kapı düşülür.
+ * shortcut: kapı yüksekliği 2,20 m (kapı pinleriyle aynı; planda yok), kesit/görünüşten alınırsa güncellenir.
+ */
+const DOOR_H = 2.2;
+type Opening = { d: Door; wall: Raw3; lintel: Raw3; width: number; cut: boolean };
+function cutDoorOpenings(doors: Door[], walls: Raw3[], flat: Flat[], name: (d: Door) => string, thick: Map<Raw3, number>): Opening[] {
+  const out: Opening[] = [];
+  const T = 400;
+  const B = 1e6;
+  const doorPts = new Map<number, P[]>();
+  for (const f of flat) if (f.layer === 'A_Door_Wood' && f.pts && f.inst) doorPts.set(f.inst, [...(doorPts.get(f.inst) ?? []), ...f.pts]);
+  const segDist = (p: P, a: P, b: P) => {
+    const [dx, dy] = [b.x - a.x, b.y - a.y];
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+    return Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y);
+  };
+  const inside = (p: P, rings: P[][]) => rings.filter((r) => pointInPolygon(p, r)).length % 2 === 1;
+  /** Halkalar → üçgenler (büyükten küçüğe: içine düşen halka boşluk, değilse yeni dış halka). */
+  const triangles = (rings: P[][]): P[][] => {
+    const shapes: { outer: P[]; holes: P[][] }[] = [];
+    for (const r of [...rings].sort((a, b) => area(b) - area(a))) {
+      const host = shapes.find((s) => pointInPolygon(r[0], s.outer) && !s.holes.some((h) => pointInPolygon(r[0], h)));
+      if (host) host.holes.push(r);
+      else shapes.push({ outer: r, holes: [] });
+    }
+    const v = (r: P[]) => r.map((p) => new Vector2(p.x, p.y));
+    return shapes.flatMap((s) => {
+      const all = [s.outer, ...s.holes].flat();
+      return ShapeUtils.triangulateShape(v(s.outer), s.holes.map(v)).map((t) => t.map((i) => all[i]));
+    });
+  };
+  /** Dışbükey parçalardan katı: alt, üst ve yan yüzler (iç yan yüzler duvarın içinde kalır). */
+  const solid = (polys: P[][], z0: number, z1: number) =>
+    polys.flatMap((q) => [
+      q.map((p) => ({ ...p, z: z1 })),
+      [...q].reverse().map((p) => ({ ...p, z: z0 })),
+      ...q.map((a, i) => {
+        const b = q[(i + 1) % q.length];
+        return [{ ...a, z: z0 }, { ...b, z: z0 }, { ...b, z: z1 }, { ...a, z: z1 }];
+      }),
+    ]);
+  const cutParts = new Map<Raw3, P[][]>(); // kesilen duvarın güncel dışbükey parçaları
+  const keep = (q: P[]) => q.length >= 3 && area(q) > 1e3;
+  for (const d of doors) {
+    const dp = d.inst ? doorPts.get(d.inst) : undefined;
+    if (!dp?.length) continue;
+    // duvar doğrultusu: kapı noktasına yakın uzun duvar kenarları, yakından uzağa. Geniş kapıda nokta açıklığın ortasında
+    // (duvar ucuna ~1,3 m) ve en yakın kenar dik bir duvarın olabilir; açıklığa uyan ilk kenar alınır.
+    const cands: { a: P; b: P; dist: number; w: Raw3 }[] = [];
+    for (const w of walls)
+      for (const r of w.loops!)
+        r.forEach((a, i) => {
+          const b = r[(i + 1) % r.length];
+          const dist = Math.hypot(b.x - a.x, b.y - a.y) > 300 ? segDist(d.at, a, b) : Infinity;
+          if (dist <= 1600) cands.push({ a, b, dist, w });
+        });
+    cands.sort((p, q) => p.dist - q.dist);
+    for (const { a, b, dist, w: bw } of cands.slice(0, 8)) {
+      const L = Math.hypot(b.x - a.x, b.y - a.y);
+      const u = { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
+      const at = (s: number, t: number): P => ({ x: d.at.x + u.x * s - u.y * t, y: d.at.y + u.y * s + u.x * t });
+      const ss = dp.map((p) => (p.x - d.at.x) * u.x + (p.y - d.at.y) * u.y);
+      const [s0, s1] = [Math.min(...ss), Math.max(...ss)];
+      if (s1 - s0 < 500) continue;
+      const mid = at((s0 + s1) / 2, 0);
+      const parts = (w: Raw3) => cutParts.get(w) ?? triangles(w.loops!);
+      const hosts = walls.filter((w) => (cutParts.has(w) ? parts(w).some((q) => pointInPolygon(mid, q)) : inside(mid, w.loops!))); // açıklığın ortası taramanın içindeyse kesilmemiş
+      const rect = (sa: number, sb: number, ta: number, tb: number) => [at(sa, ta), at(sb, ta), at(sb, tb), at(sa, tb)];
+      const width = (s1 - s0) / 1000;
+      const label = `Kapı üstü duvar (lento, +${DOOR_H.toFixed(2).replace('.', ',')} → üst) – ${name(d)}`;
+      if (!hosts.length) {
+        // tarama kapıda kesik: açıklık boştur ve iki yanında duvar sürer → üstüne o duvar kalınlığında lento
+        const e = -u.y * (a.x - d.at.x) + u.x * (a.y - d.at.y); // duvar kenarının kapı noktasına dik uzaklığı
+        const sm = ((a.x + b.x) / 2 - d.at.x) * u.x + ((a.y + b.y) / 2 - d.at.y) * u.y;
+        const sg = inside(at(sm, e + 20), bw.loops!) ? 1 : -1;
+        const tw = thick.get(bw)!;
+        const tm = e + (sg * tw) / 2;
+        const wallAt = (p: P) => walls.some((w) => inside(p, w.loops!));
+        if (wallAt(at((s0 + s1) / 2, tm)) || !wallAt(at(s0 - 150, tm)) || !wallAt(at(s1 + 150, tm))) continue;
+        const lintel = model3d.add({ layer: bw.layer, kind: 'mesh', items: [], label, faces: solid([rect(s0, s1, e, e + sg * tw)], DOOR_H, bw.z1), z0: DOOR_H, z1: bw.z1 });
+        out.push({ d, wall: bw, lintel, width, cut: false });
+        break;
+      }
+      if (dist > 500) continue; // kesilmemiş taramada kapı noktası duvar kenarında olmalı
+      const box = rect(s0, s1, -T, T);
+      const rest = [rect(-B, s0, -B, B), rect(s1, B, -B, B), rect(s0, s1, T, B), rect(s0, s1, -B, -T)];
+      for (const w of hosts) {
+        const ps = parts(w);
+        const lintel = ps.map((q) => clipConvex(q, box)).filter(keep);
+        cutParts.set(w, ps.flatMap((q) => rest.map((c) => clipConvex(q, c))).filter(keep));
+        if (lintel.length) out.push({ d, wall: w, width, cut: true, lintel: model3d.add({ layer: w.layer, kind: 'mesh', items: [...w.items], lines: { ...w.lines }, label, faces: solid(lintel, DOOR_H, w.z1), z0: DOOR_H, z1: w.z1 }) });
+      }
+      break;
+    }
+  }
+  // loops kalır (cephe/çatı betikleri duvar konumunu okur); 3B çıktısı mesh yüzlerinden
+  for (const [w, ps] of cutParts) Object.assign(w, { kind: 'mesh', faces: solid(ps, w.z0, w.z1) });
+  return out;
+}
+
+/** wallTop: duvarın üst kotu (m) ve dayanağı, üstündeki çatıya göre (roof-items wallTopAt). */
+export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pts: P[]; verts?: { x: number; y: number; bulge: number }[]; area: number }, wallTop: (p: P) => { z: number; where: string }): TakeoffItem[] {
   const items: TakeoffItem[] = [];
   const top = (f: Flat) => f.path[0] ?? '';
   const gfRooms = rooms.filter((r) => r.floor === 'Zemin Kat');
@@ -64,21 +172,24 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
 
   // --- Duvarlar (A_Patt_Wall taramaları)
   const walls = flat.filter((f) => top(f) === '4199_AMH_Walls_GF' && f.layer === 'A_Patt_Wall' && f.t === 'HATCH' && f.loops);
-  const cls = new Map<number, { n: number; L: number; A: number; ext: number; pcs: { t: number; L: number }[] }>();
-  const wallRaws: { raw: ReturnType<typeof model3d.add>; tc: number }[] = [];
+  type Piece = { t: number; L: number; raw: Raw3; c: P; top: { z: number; where: string } };
+  const cls = new Map<number, { n: number; L: number; A: number; ext: number; pcs: Piece[] }>();
+  const wallRaws: { raw: Raw3; tc: number }[] = [];
   for (const h of walls) {
-    const wallRaw = model3d.add({ layer: 'duvar', kind: 'prism', items: ['G.1', 'G.2'], label: 'Duvar (A_Patt_Wall taraması)', loops: h.loops!, z0: 0, z1: 7.1 });
+    const b = bbox(h.loops![0]);
+    const c = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
+    // shortcut: yükseklik parçanın orta noktasına göre; iki çatı bölgesine taşan parça tek yükseklik alır
+    const wt = wallTop(c);
+    const wallRaw = model3d.add({ layer: 'duvar', kind: 'prism', items: ['G.1', 'G.2'], label: 'Duvar (A_Patt_Wall taraması)', loops: h.loops!, z0: 0, z1: wt.z });
     const A = regionArea(h.loops!);
     const Pm = h.loops!.reduce((s, l) => s + length(l, true), 0);
     const disc = (Pm / 2) ** 2 - 4 * A;
     const t = disc > 0 ? (Pm / 2 - Math.sqrt(disc)) / 2 : Math.sqrt(A);
     const L = A / t;
     const tc = Math.max(100, Math.round(t / 50) * 50);
-    const b = bbox(h.loops![0]);
-    const c = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
     const ext = plate.pts.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < Math.max(1000, L / 2));
     const k = cls.get(tc) ?? { n: 0, L: 0, A: 0, ext: 0, pcs: [] };
-    k.pcs.push({ t, L });
+    k.pcs.push({ t, L, raw: wallRaw, c, top: wt });
     wallRaws.push({ raw: wallRaw, tc });
     k.n++;
     k.L += L;
@@ -87,17 +198,18 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     cls.set(tc, k);
   }
   const mm3 = (x: number) => Math.round(x) / 1000;
-  const wallCalc = (k: { pcs: { t: number; L: number }[] }, unit: 'm' | 'm²'): CalcRow[] =>
-    mergeRows(
-      k.pcs
-        .slice()
-        .sort((a, b) => b.L - a.L)
-        .map((p) => {
-          const en = mm3(p.t);
-          const boy = mm3(p.L);
-          return { kind: 'duvar' as const, unit, label: 'Duvar parçası', adet: 1, en, boy, sign: 1 as const, value: unit === 'm' ? boy : en * boy };
-        }),
-    );
+  // Birleştirilmez: her parça kendi 3B elemanına bağlı satır (ref) taşır; eleman hem G.1 hem G.2 satırına bağlanır.
+  const wallCalc = (k: { pcs: Piece[] }, unit: 'm' | 'm²'): CalcRow[] =>
+    k.pcs
+      .slice()
+      .sort((a, b) => b.L - a.L)
+      .map((p) => {
+        const en = mm3(p.t);
+        const boy = mm3(p.L);
+        const row: CalcRow = { kind: 'duvar', unit, label: 'Duvar parçası', adet: 1, en, boy, sign: 1, value: unit === 'm' ? boy : en * boy };
+        p.raw.row = [...[p.raw.row ?? []].flat(), row];
+        return row;
+      });
   const wallLines = [...cls.entries()].sort((a, b) => a[0] - b[0]).map(([tc, k]) => ({
     label: `~${tc / 10} cm kalınlık (${k.n} parça)`,
     value: r2(k.L / 1000),
@@ -106,9 +218,13 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     calc: wallCalc(k, 'm'),
     calcA: wallCalc(k, 'm²'),
   }));
+  /** Duvar yüzey alanı kalemleri: kalınlık sınıfı başına G.3.n (inceden kalına). */
+  const g3Poz = new Map([...cls.keys()].sort((a, b) => a - b).map((tc, i) => [tc, `G.3.${i + 1}`]));
   for (const w of wallRaws) {
     const label = `~${w.tc / 10} cm kalınlık (${cls.get(w.tc)!.n} parça)`;
-    w.raw.lines = { 'G.1': label, 'G.2': label };
+    const p3 = g3Poz.get(w.tc)!;
+    w.raw.items.unshift(p3); // 3B'de tıklanınca ilk kalem açılır: kalınlık sınıfının yüzey alanı
+    w.raw.lines = { 'G.1': label, 'G.2': label, [p3]: 'Duvar yüzleri' };
     w.raw.label = `Duvar ~${w.tc / 10} cm (A_Patt_Wall taraması)`;
   }
   const wallL = [...cls.values()].reduce((s, k) => s + k.L, 0) / 1000;
@@ -120,7 +236,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     sources: [{ drawing: GF, where: 'blok 4199_AMH_Walls_GF · katman A_Patt_Wall (183 tarama)' }],
     confidence: 'Orta',
     lines: wallLines.map(({ calcA: _a, ...l }) => l),
-    notes: ['Duvar yüzey alanı için duvar yükseklikleri kesitlerden alınmalı (bkz. G.3).'],
+    notes: ['Duvar yüzey alanı kalınlık sınıflarına göre G.3.x kalemlerinde.'],
   });
   items.push({
     poz: 'G.2', group: 'G', name: 'Zemin kat duvarları – taban izi alanı', unit: 'm²', value: r2(wallA),
@@ -180,6 +296,70 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     doorNo.set(doorKey(d), n + 1);
     model3d.add({ layer: 'donatı', kind: 'pin', items: [`H.${k + 1}`, `H.${sorted.length + 1}`], lines: { [`H.${k + 1}`]: n }, label: `${doorKey(d)} (blok ${d.name})`, path: [d.at], z0: 0, z1: 2.2 });
   }
+  const doorName = (d: Door) => `${doorKey(d)} – ${doorPlace(d.at)}`;
+  const pieces = [...cls.values()].flatMap((k) => k.pcs);
+  const openings = cutDoorOpenings(doors, wallRaws.map((w) => w.raw), flat, doorName, new Map(pieces.map((p) => [p.raw, p.t])));
+
+  // --- Duvar yüzey alanı (tek yüz), kalınlık sınıfı başına: parça uzunluğu × üstündeki çatıya göre yükseklik ± kapı açıklıkları
+  const kot = (z: number) => `+${z.toFixed(2).replace('.', ',')}`;
+  const m3 = (x: number) => Math.round(x * 1000) / 1000;
+  const tcOf = new Map(wallRaws.map((w) => [w.raw, w.tc]));
+  const link = (r: Raw3, row: CalcRow) => (r.row = [...[r.row ?? []].flat(), row]);
+  const csum = (rows: CalcRow[]) => rows.reduce((s, r) => s + r.value, 0);
+  const LINTEL = 'Kapı üstü lentolar (taraması kapıda kesik)';
+  const DOORCUT = 'Eksi: kapı boşlukları (taraması kapıda kesilmemiş)';
+  const g3 = [...g3Poz].map(([tc, poz]): TakeoffItem => {
+    const k = cls.get(tc)!;
+    const face = k.pcs
+      .slice()
+      .sort((a, b) => b.L - a.L)
+      .map((p) => {
+        const near = roomsNear(p.c, 3000)[0]?.label;
+        const en = mm3(p.L);
+        const row: CalcRow = { kind: 'dikdörtgen', label: 'duvar yüzü', name: `${near ? `${near} yanında, ` : ''}±0,00 → ${kot(p.top.z)} (${p.top.where})`, adet: 1, en, boy: p.top.z, sign: 1, value: en * p.top.z };
+        link(p.raw, row);
+        return row;
+      });
+    const opRows = (cut: boolean, line: string) =>
+      openings
+        .filter((o) => o.cut === cut && tcOf.get(o.wall) === tc)
+        .map((o) => {
+          const [en, boy, sign] = cut ? [m3(o.width), DOOR_H, -1 as const] : [m3(o.width), m3(o.lintel.z1 - DOOR_H), 1 as const];
+          const row: CalcRow = { kind: 'dikdörtgen', label: cut ? 'kapı boşluğu' : 'lento', name: `${doorName(o.d)}, ${cut ? `±0,00 → ${kot(DOOR_H)}` : `${kot(DOOR_H)} → ${kot(o.lintel.z1)}`}`, adet: 1, en, boy, sign, value: sign * en * boy };
+          if (!o.lintel.items.includes(poz)) o.lintel.items.push(poz);
+          o.lintel.lines = { ...o.lintel.lines, [poz]: line };
+          link(o.lintel, row);
+          return row;
+        });
+    const lintels = opRows(false, LINTEL);
+    const cuts = opRows(true, DOORCUT);
+    const total = csum(face) + csum(lintels) + csum(cuts);
+    return {
+      poz, group: 'G', name: `Zemin kat duvarı ~${tc / 10} cm – yüzey alanı (tek yüz)`, unit: 'm²', value: r2(total),
+      method:
+        `~${tc / 10} cm sınıfındaki her duvar parçasının (A_Patt_Wall taraması, uzunluğu G.1'deki gibi L = A / t) uzunluğu × yüksekliği. Yükseklik, parçanın üstündeki çatının döşeme kotundan: +3,70 alçak çatıların altında 3,70 m, diğer yerlerde (teras, salonlar) 7,10 m; salonlarda +7,10 üstündeki kabuk duvar C.4'te ayrı. Taraması kapıda kesik olan kapıların üstüne lento eklendi (kapı genişliği × (yükseklik − ${kot(DOOR_H).slice(1)})); taraması kapıdan kesilmeden geçen kapılarda kapı boşluğu düşüldü (genişlik × ${kot(DOOR_H).slice(1)}). Kapı genişliği, kapı bloğu çizgilerinin duvar boyunca uzanımı. Tek yüz alanıdır; sıva/boya için iki yüz ayrıca hesaplanmalı.`,
+      sources: [
+        { drawing: GF, where: 'blok 4199_AMH_Walls_GF · katman A_Patt_Wall · kapı blokları A_Door_Wood' },
+        { drawing: '4199-A-DD-01-02-300', where: 'çatı planı · +3,70 alçak çatı kutuları, +7,10 teras kotu' },
+      ],
+      confidence: 'Orta',
+      lines: [
+        { label: 'Duvar yüzleri', value: r2(csum(face)), unit: 'm²', note: `${k.n} parça · toplam uzunluk ${r2(k.L / 1000)} m`, calc: face },
+        ...(lintels.length ? [{ label: LINTEL, value: r2(csum(lintels)), unit: 'm²', note: `${lintels.length} kapı`, calc: lintels }] : []),
+        ...(cuts.length ? [{ label: DOORCUT, value: r2(csum(cuts)), unit: 'm²', note: `${cuts.length} kapı`, calc: cuts }] : []),
+      ],
+      notes: [
+        'Duvar yüksekliği döşeme üst kotuna kadar alındı; döşeme kalınlığı düşülmedi.',
+        'Asma kat (+3,80) altındaki duvarlar ayrılmadı; orada da çatı kotu alındı.',
+        `Kapı yüksekliği ${kot(DOOR_H).slice(1)} m varsayıldı (planda yok). Pencere/cam bölme açıklıkları düşülmedi (duvar taramasında zaten yoklar).`,
+      ],
+    };
+  });
+  items.push(...g3, {
+    poz: 'G.3', group: 'G', name: 'Zemin kat duvarları – yüzey alanı toplamı (tek yüz)', unit: 'm²', value: r2(g3.reduce((s, i) => s + (i.value ?? 0), 0)),
+    formula: g3.map((i) => i.poz).join(' + '),
+    method: 'Kalınlık sınıflarına göre duvar yüzey alanı kalemlerinin toplamı.', sources: [], confidence: 'Orta', lines: [],
+  });
   sorted.forEach(([k, n], i) => {
     items.push({
       poz: `H.${i + 1}`, group: 'H', name: k, unit: 'adet', value: n,
@@ -199,7 +379,11 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
   });
 
   // --- Taşıyıcı kesitler
-  const st = flat.filter((f) => top(f) === 'STRUCTURE_GF_NN' && f.layer === 'A_Stuc_Conc' && f.closed && f.pts);
+  const stAll = flat.filter((f) => top(f) === 'STRUCTURE_GF_NN' && f.layer === 'A_Stuc_Conc' && f.closed && f.pts);
+  // planda üst üste çizilmiş kesitler bir kez sayılır (aynı merkez ±5 cm, aynı alan ±%2)
+  const mid = (f: Flat) => { const b = bbox(f.pts!); return { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 }; };
+  const st = stAll.filter((f, i) => !stAll.slice(0, i).some((g) => Math.hypot(mid(f).x - mid(g).x, mid(f).y - mid(g).y) < 50 && Math.abs(area(f.pts!) - area(g.pts!)) < 0.02 * area(f.pts!)));
+  const stDup = stAll.length - st.length;
   const kinds = new Map<string, { n: number; inside: number; A: number; calc: CalcRow[]; pts: P[][] }>();
   for (const f of st) {
     const A = area(f.pts!) / 1e6;
@@ -228,7 +412,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     }
     items.push({
       poz: `I.${i + 1}`, group: 'I', name: k, unit: 'adet', value: e.n,
-      method: 'Zemin kat taşıyıcı bloğundaki kapalı kesitler (katman A_Stuc_Conc) sayıldı ve kesit alanına göre sınıflandı. Bilgi amaçlıdır; kesin değerler statik projeden alınır.',
+      method: `Zemin kat taşıyıcı bloğundaki kapalı kesitler (katman A_Stuc_Conc) sayıldı ve kesit alanına göre sınıflandı.${stDup ? ` Planda üst üste iki kez çizilmiş ${stDup} kesit (aynı merkez, aynı alan) bir kez sayıldı.` : ''} Bilgi amaçlıdır; kesin değerler statik projeden alınır.`,
       sources: [{ drawing: GF, where: 'blok STRUCTURE_GF_NN · katman A_Stuc_Conc' }],
       confidence: 'Yüksek',
       lines: [
