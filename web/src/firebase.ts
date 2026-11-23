@@ -5,13 +5,26 @@ import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 import { connectStorageEmulator, getStorage } from 'firebase/storage';
 import { FIREBASE_PROJECT_ID, REGION } from '@shared/constants';
 
-// Yerel çalışma: "demo-" projesi yalnız emülatörlere bağlanır. Canlı yapılandırma ayrı planda.
-const app = initializeApp({
-  apiKey: 'demo-key',
-  projectId: FIREBASE_PROJECT_ID,
-  authDomain: `${FIREBASE_PROJECT_ID}.firebaseapp.com`,
-  storageBucket: `${FIREBASE_PROJECT_ID}.appspot.com`,
-});
+// Canlı: web/.env.production içindeki VITE_FIREBASE_* (Firebase konsolundaki web uygulaması ayarı; gizli değildir).
+// Yerel: "demo-" projesi yalnız emülatörlere bağlanır.
+const env = import.meta.env;
+const app = initializeApp(
+  env.VITE_FIREBASE_PROJECT_ID && env.VITE_USE_EMULATORS !== 'true'
+    ? {
+        apiKey: env.VITE_FIREBASE_API_KEY,
+        authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
+        projectId: env.VITE_FIREBASE_PROJECT_ID,
+        storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
+        messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+        appId: env.VITE_FIREBASE_APP_ID,
+      }
+    : {
+        apiKey: 'demo-key',
+        projectId: FIREBASE_PROJECT_ID,
+        authDomain: `${FIREBASE_PROJECT_ID}.firebaseapp.com`,
+        storageBucket: `${FIREBASE_PROJECT_ID}.appspot.com`,
+      },
+);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);

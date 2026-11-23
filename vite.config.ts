@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -32,10 +32,18 @@ function localData(): Plugin {
   };
 }
 
-export default defineConfig({
+/** Canlı derleme Firebase ayarı olmadan çıkmasın (yoksa demo projeye bağlı, çalışmayan bir site yayınlanır). */
+function requireLiveConfig(mode: string) {
+  if (mode !== 'production') return;
+  const env = loadEnv(mode, fileURLToPath(new URL('./web', import.meta.url)), 'VITE_');
+  const missing = ['API_KEY', 'AUTH_DOMAIN', 'PROJECT_ID', 'STORAGE_BUCKET', 'APP_ID'].map((k) => `VITE_FIREBASE_${k}`).filter((k) => !env[k]);
+  if (missing.length) throw new Error(`Canlı derleme için web/.env.production eksik: ${missing.join(', ')}`);
+}
+
+export default defineConfig(({ mode }) => (requireLiveConfig(mode), {
   root: 'web',
   plugins: [react(), localData()],
   resolve: { alias: { '@shared': fileURLToPath(new URL('./shared', import.meta.url)) } },
   server: { port: 5173, strictPort: true },
   build: { outDir: '../dist', emptyOutDir: true },
-});
+}));

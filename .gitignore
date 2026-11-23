@@ -11,6 +11,7 @@ Projeler/
 .env
 .env.*
 !.env.development
+!.env.production
 *service-account*.json
 *-firebase-adminsdk-*.json
 
