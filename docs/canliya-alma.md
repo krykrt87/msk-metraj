@@ -73,11 +73,14 @@ npx tsx scripts/set-storage-cors.ts --prod
    $env:GOOGLE_APPLICATION_CREDENTIALS = "$env:USERPROFILE\.anahtar\msk-admin.json"
    npx tsx scripts/bootstrap-admin.ts --prod --email <e-posta> --name "<ad soyad>" --password <şifre>
    npx tsx scripts/import-takeoff.ts --prod
+   npx tsx scripts/upload-drawings.ts --prod      # 40 pafta (Projeler/.../PDF + Drawing Register)
    ```
+
+   Pafta betiği zaten yüklenmiş paftayı atlar; `--force` üzerine yazar, `--dry-run` yalnız eşleşmeyi raporlar.
 
    `--prod` olmadan betikler her zaman emülatöre gider.
 
 ## Sonra
 
-- Paftaların (PDF) Storage'a yüklenmesi, PR önizleme kanalı, özel alan adı: ayrı adımlar.
+- Pafta revizyonu yükleme (arayüzden), PR önizleme kanalı, özel alan adı: ayrı adımlar.
 - Yerel çalışma değişmez: `baslat.bat` / `npm run dev` (yerel mod), `npm run emulators`.

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { can } from '@shared/access';
 import { formatTr } from '@shared/number';
 import type { FacadeRow, Item, Room, UserProfile } from '@shared/types';
@@ -109,11 +110,17 @@ export function ItemDetail({
             <dd>
               {item.drawings.length > 0 ? (
                 <div className="chips">
-                  {item.drawings.map((d) => (
-                    <span key={d} className="chip">
-                      {d.replace('4199-A-DD-', '')}
-                    </span>
-                  ))}
+                  {item.drawings.map((d) =>
+                    can(profile, 'drawings') ? (
+                      <Link key={d} className="chip" to={`/paftalar?pafta=${encodeURIComponent(d)}`} title="Paftayı aç">
+                        {d.replace('4199-A-DD-', '')}
+                      </Link>
+                    ) : (
+                      <span key={d} className="chip">
+                        {d.replace('4199-A-DD-', '')}
+                      </span>
+                    ),
+                  )}
                 </div>
               ) : (
                 '—'
