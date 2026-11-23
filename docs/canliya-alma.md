@@ -33,7 +33,8 @@ erişimi güvenlik kuralları korur.
 1. https://console.cloud.google.com/iam-admin/serviceaccounts → üstten Firebase projesini seç
    → **Hizmet hesabı oluştur** → ad: `github-deploy`.
 2. Roller: **Firebase Admin**, **Cloud Functions Admin**, **Service Account User**,
-   **Artifact Registry Administrator**, **Cloud Datastore Index Admin**.
+   **Artifact Registry Administrator**, **Cloud Datastore Index Admin**, **Service Usage Admin**
+   (ilk yayında işlevler için gereken Google servislerini açabilsin).
 3. Hesaba tıkla → **Anahtarlar** → Anahtar ekle → **JSON** → dosya iner.
 4. GitHub deposu → **Settings → Secrets and variables → Actions → New repository secret**
    → ad: `FIREBASE_SERVICE_ACCOUNT` → değer: JSON dosyasının **tüm içeriği**.
