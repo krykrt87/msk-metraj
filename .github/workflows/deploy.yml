@@ -19,12 +19,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
@@ -42,7 +42,7 @@ jobs:
     env:
       HAS_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Yayın ayarı hazır mı
         id: cfg
         run: |
@@ -51,7 +51,7 @@ jobs:
           else
             echo "::warning::Yayın atlandı: web/.env.production ya da FIREBASE_SERVICE_ACCOUNT gizli anahtarı yok (docs/canliya-alma.md)."
           fi
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.cfg.outputs.ready == 'true'
         with:
           node-version: 24
@@ -61,10 +61,11 @@ jobs:
       - name: Web derlemesi
         if: steps.cfg.outputs.ready == 'true'
         run: npx vite build
-      - uses: google-github-actions/auth@v2
+      - uses: google-github-actions/auth@v3
         if: steps.cfg.outputs.ready == 'true'
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
       - name: Firebase'e yayın
         if: steps.cfg.outputs.ready == 'true'
-        run: npx firebase deploy --project prod --non-interactive --only hosting,firestore,storage,functions
+        # --force: onay bekleyen adımları kabul eder (işlev imajları için temizlik kuralı; koddan silinen işlevleri kaldırma)
+        run: npx firebase deploy --project prod --non-interactive --force --only hosting,firestore,storage,functions
