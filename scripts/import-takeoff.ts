@@ -114,7 +114,7 @@ async function main(argv: string[]) {
   const kept = keepManualSpecs(data.items, prev.docs.map((d) => d.data() as Item));
   if (kept.length) console.log(`Elle girilen malzeme özellikleri korundu: ${kept.join(', ')}`);
   await writeImport(db, data, { reset: true, source: `DWG metrajı ${t.generatedAt.slice(0, 10)}` });
-  console.log('Emülatöre yazıldı (eski veri silindi).');
+  console.log(`${argv.includes('--prod') ? 'Canlıya' : 'Emülatöre'} yazıldı (eski veri silindi).`);
   // 3B model (metraj motorunun geometrisinden) → Storage
   const model = argValue(argv, '--model') ?? 'work/model3d.json';
   if (existsSync(model)) {

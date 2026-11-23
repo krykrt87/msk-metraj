@@ -40,6 +40,16 @@ erişimi güvenlik kuralları korur.
    → ad: `FIREBASE_SERVICE_ACCOUNT` → değer: JSON dosyasının **tüm içeriği**.
 5. İndirilen JSON dosyasını sil (anahtar artık GitHub'da şifreli duruyor).
 
+## 3b. Storage → Firestore izni (bir kerelik, Koray)
+
+Storage kuralları yetkiyi Firestore'daki kullanıcı profilinden okur; bunun için Storage hizmet aracısının
+Firestore'u okuma izni olmalı. CLI bu izni yalnız etkileşimli yayında sorarak verir, CI'da veremez.
+Eksikse 3B model / paftalar "storage/unauthorized" hatası verir.
+
+1. https://console.cloud.google.com/iam-admin/iam?project=msk-metraj → **Grant access**
+2. Principal: `service-65414843405@gcp-sa-firebasestorage.iam.gserviceaccount.com`
+3. Rol: **Firebase Rules Firestore Service Agent** → Save. Yayılması birkaç dakika sürebilir.
+
 ## 4. İlk yayın ve veri (Claude, Koray'la)
 
 1. `main`'e gönderim → Actions sekmesinde "Test ve canlı yayın" çalışır → site:
