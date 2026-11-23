@@ -50,6 +50,18 @@ Eksikse 3B model / paftalar "storage/unauthorized" hatası verir.
 2. Principal: `service-65414843405@gcp-sa-firebasestorage.iam.gserviceaccount.com`
 3. Rol: **Firebase Rules Firestore Service Agent** → Save. Yayılması birkaç dakika sürebilir.
 
+## 3c. Storage CORS (bir kerelik)
+
+Tarayıcı model/paftayı `getBytes` ile doğrudan indirir; Storage alanı sitenin adresine izin vermezse istek
+"Failed to fetch" ile düşer ve ekran "3B model yükleniyor…"da kalır. İzin verilen adresler `storage-cors.json`:
+
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS = "$env:USERPROFILE\.anahtar\msk-admin.json"
+npx tsx scripts/set-storage-cors.ts --prod
+```
+
+Özel alan adı eklenirse `storage-cors.json`'a yazıp betiği yeniden çalıştır.
+
 ## 4. İlk yayın ve veri (Claude, Koray'la)
 
 1. `main`'e gönderim → Actions sekmesinde "Test ve canlı yayın" çalışır → site:

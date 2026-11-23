@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://msk-metraj.web.app", "https://msk-metraj.firebaseapp.com"],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Content-Length", "Content-Range"],
+    "maxAgeSeconds": 3600
+  }
+]
