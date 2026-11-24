@@ -325,6 +325,7 @@ table.data tr.total td {
   border-right: 1px solid var(--rule);
   display: flex;
   flex-direction: column;
+  overflow: hidden; /* kaydırma yalnız kalem ağacında (.tree) */
 }
 .detail-pane {
   border-left: 1px solid var(--rule);
@@ -388,7 +389,7 @@ body.resizing {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  height: 100%;
+  flex: 1; /* üstteki Gizle düğmesiyle birlikte paneli taşırmasın */
 }
 .filters {
   padding: 10px 12px;
@@ -425,6 +426,7 @@ label.check {
 .tree {
   overflow: auto;
   flex: 1;
+  min-height: 0;
 }
 .group-head {
   display: flex;
