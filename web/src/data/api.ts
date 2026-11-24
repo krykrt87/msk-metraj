@@ -24,7 +24,9 @@ function call<I, O = Result>(name: string) {
   return async (input: I): Promise<O> => {
     if (LOCAL) throw new Error(LOCAL_READONLY);
     try {
-      const r = await httpsCallable(functions, name)({ projectId: PROJECT_ID, discipline: DISCIPLINE, ...input });
+      // Firebase istemcisi undefined alanı null gönderir; şemalar isteğe bağlı alanda null kabul etmez → JSON turu undefined'ı atar.
+      const data = JSON.parse(JSON.stringify({ projectId: PROJECT_ID, discipline: DISCIPLINE, ...input }));
+      const r = await httpsCallable(functions, name)(data);
       return r.data as O;
     } catch (e) {
       throw new Error(apiErrorMessage(e));
