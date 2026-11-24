@@ -21,7 +21,7 @@ const renderShell = (role: UserProfile['role']) =>
 describe('Shell', () => {
   it('menü sayfaları ve kullanıcı bilgisi', () => {
     renderShell('kontrolcu');
-    for (const label of ['Metraj', 'Malzeme Listesi', 'Mahal Listesi', 'Cephe', 'Proje Kontrol', 'Paftalar', 'Özet', 'Yöntem', 'Excel çıktısı']) {
+    for (const label of ['Metraj', 'Malzeme Listesi', 'Mahal Listesi', 'Proje Kontrol', 'Paftalar', 'Excel çıktısı']) {
       expect(screen.getByRole('link', { name: label })).toBeInTheDocument();
     }
     expect(screen.getByText('Ayşe Demir')).toBeInTheDocument();

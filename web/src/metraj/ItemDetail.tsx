@@ -6,6 +6,7 @@ import type { FacadeRow, Item, Room, UserProfile } from '@shared/types';
 import { api } from '../data/api';
 import { useHistory } from '../data/hooks';
 import { formatDateTime } from '../data/types';
+import { buildWorkbook, downloadWorkbook, stamp } from '../excel/workbook';
 import { Breakdown } from './Breakdown';
 import { CorrectionForm } from './CorrectionForm';
 import { isUnmeasurable } from './filter';
@@ -16,6 +17,39 @@ import { StatusActions } from './StatusActions';
 import { StatusIcon } from './StatusIcon';
 
 type Tab = 'hesap' | 'ozellik' | 'gecmis' | 'duzelt' | 'formul';
+
+/** Yalnız bu kalemin hesap detayını Excel olarak indirir. */
+function DetailDownload({ item }: { item: Item }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const download = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const wb = await buildWorkbook({ items: [item], rooms: [], findings: [] }, ['detay']);
+      await downloadWorkbook(wb, `MSK_${item.poz}_Hesap_Detayi_${stamp()}.xlsx`);
+    } catch (e) {
+      setError((e as Error).message || 'Excel üretilemedi.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <span className="tab-tools">
+      {error && (
+        <span className="form-error" role="alert">
+          {error}
+        </span>
+      )}
+      <button type="button" className="info-btn" disabled={busy} title="Hesap detayını Excel indir" onClick={download}>
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+          <path d="M10 3v9M6 8.5l4 4 4-4M4 15.5h12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className="sr-only">{busy ? 'Hazırlanıyor…' : 'Hesap detayını Excel indir'}</span>
+      </button>
+    </span>
+  );
+}
 
 const CONF_BARS = { Yüksek: 3, Orta: 2, Düşük: 1 } as const;
 /** Ölçüm güveni: üç çubuktan dolu olanlar (Yüksek 3, Orta 2, Düşük 1). */
@@ -169,12 +203,15 @@ export function ItemDetail({
           </>
         )}
       </dl>
-      <div className="tabs" role="tablist">
-        {tabs.map(([t, label]) => (
-          <button key={t} type="button" role="tab" aria-selected={active === t} className={active === t ? 'active' : undefined} onClick={() => setTab(t)}>
-            {label}
-          </button>
-        ))}
+      <div className="tabs">
+        <div role="tablist" className="tablist">
+          {tabs.map(([t, label]) => (
+            <button key={t} type="button" role="tab" aria-selected={active === t} className={active === t ? 'active' : undefined} onClick={() => setTab(t)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {!!item.breakdown?.length && <DetailDownload item={item} />}
       </div>
       <div className="tab-body">
         {active === 'hesap' && <Breakdown item={item} focus={focusLine} focusRef={focusRef} linked={linkedLines} onLineClick={onLineClick} onRowClick={onRowClick} />}

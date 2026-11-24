@@ -7,6 +7,9 @@ import { auth } from './firebase';
 import { LOCAL } from './local';
 import { Shell } from './layout/Shell';
 import { DrawingsPage } from './drawings/DrawingsPage';
+import { ExcelPage } from './excel/ExcelPage';
+import { KontrolPage } from './kontrol/KontrolPage';
+import { MahalPage } from './mahal/MahalPage';
 import { MalzemePage } from './malzeme/MalzemePage';
 import { MetrajPage } from './metraj/MetrajPage';
 
@@ -39,13 +42,10 @@ function Gate() {
       <Routes>
         <Route path="/" element={<MetrajPage profile={profile} />} />
         <Route path="/malzeme" element={<MalzemePage profile={profile} />} />
-        <Route path="/mahal" element={<Pending title="Mahal Listesi" />} />
-        <Route path="/cephe" element={<Pending title="Cephe" />} />
-        <Route path="/proje-kontrol" element={<Pending title="Proje Kontrol" />} />
+        <Route path="/mahal" element={<MahalPage />} />
+        <Route path="/proje-kontrol" element={<KontrolPage profile={profile} />} />
         <Route path="/paftalar" element={<DrawingsPage profile={profile} />} />
-        <Route path="/ozet" element={<Pending title="Özet" />} />
-        <Route path="/yontem" element={<Pending title="Yöntem" />} />
-        <Route path="/excel" element={<Pending title="Excel çıktısı" />} />
+        <Route path="/excel" element={<ExcelPage />} />
         <Route path="/kullanicilar" element={<Pending title="Kullanıcılar" />} />
         <Route path="*" element={<Pending title="Sayfa bulunamadı" />} />
       </Routes>

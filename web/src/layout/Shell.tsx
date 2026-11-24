@@ -13,11 +13,8 @@ const NAV: NavItem[] = [
   { to: '/', label: 'Metraj' },
   { to: '/malzeme', label: 'Malzeme Listesi' },
   { to: '/mahal', label: 'Mahal Listesi' },
-  { to: '/cephe', label: 'Cephe' },
   { to: '/proje-kontrol', label: 'Proje Kontrol' },
   { to: '/paftalar', label: 'Paftalar', show: (p) => can(p, 'drawings') },
-  { to: '/ozet', label: 'Özet' },
-  { to: '/yontem', label: 'Yöntem' },
   { to: '/excel', label: 'Excel çıktısı' },
   { to: '/kullanicilar', label: 'Kullanıcılar', show: (p) => can(p, 'admin') },
 ];

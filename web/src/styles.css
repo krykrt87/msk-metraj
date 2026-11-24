@@ -727,10 +727,27 @@ label.check {
 }
 .tabs {
   display: flex;
+  align-items: center;
   gap: 2px;
   border-bottom: 1px solid var(--rule);
 }
-.tabs button {
+.tablist {
+  display: flex;
+  min-width: 0;
+  gap: 2px;
+}
+.tab-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0 4px;
+}
+.tab-tools .info-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.tablist button {
   font: inherit;
   font-size: var(--fs-1);
   font-weight: 500;
@@ -741,7 +758,7 @@ label.check {
   border-bottom: 2px solid transparent;
   cursor: pointer;
 }
-.tabs button.active {
+.tablist button.active {
   color: var(--ink);
   border-bottom-color: var(--redline);
 }
@@ -1550,11 +1567,11 @@ a.chip:hover {
   .facts {
     grid-template-columns: 96px 1fr;
   }
-  .tabs {
+  .tablist {
     overflow-x: auto;
     scrollbar-width: none;
   }
-  .tabs button {
+  .tablist button {
     white-space: nowrap;
     padding-top: 10px;
     padding-bottom: 10px;
