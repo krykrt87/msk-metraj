@@ -19,6 +19,8 @@ const COLORS: Record<Layer3, number> = {
   cephe: 0xc4cbd3,
   donatı: 0x6941c6,
 };
+/** Saçak alnı alüminyum bantları: bantlar ayrı okunsun diye bant başına ton (görünüşteki gerçek renk değil). */
+const EAVE_BANDS: Record<string, number> = { 'C.5': 0xc3c8cd, 'C.6': 0x9aa2aa, 'C.7': 0xc3c8cd, 'C.8': 0x6f777e, 'C.17': 0x5c646b, 'D.13': 0xb4bbc2, frame: 0x4a5157 };
 const HIGHLIGHT = 0xe8590c;
 const PICKED = 0x1d4e89;
 const fmt = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -119,14 +121,16 @@ export default function Viewer3D({
 
     const mats = new Map<string, THREE.Material>();
     const baseMat = (e: El3) => {
-      const glass = e.items.includes('C.1');
+      const frame = e.kind === 'prism' && (e.items.includes('C.1') || e.items.includes('C.14')); // alüminyum doğrama dikme / kayıt
+      const glass = !frame && e.items.includes('C.1');
       const stone = e.items.includes('C.10');
-      const k = glass ? 'glass' : stone ? 'stone' : e.layer;
+      const alu = frame ? 'frame' : e.items.find((p) => p in EAVE_BANDS);
+      const k = glass ? 'glass' : stone ? 'stone' : alu ?? e.layer;
       if (!mats.has(k))
         mats.set(
           k,
           new THREE.MeshStandardMaterial({
-            color: glass ? 0x8fb8d8 : stone ? 0xd6c6a3 : COLORS[e.layer],
+            color: glass ? 0x8fb8d8 : stone ? 0xd6c6a3 : alu ? EAVE_BANDS[alu] : COLORS[e.layer],
             side: THREE.DoubleSide,
             transparent: glass || e.layer === 'tavan',
             opacity: glass ? 0.55 : e.layer === 'tavan' ? 0.85 : 1,

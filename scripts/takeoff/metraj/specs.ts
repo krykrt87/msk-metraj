@@ -74,6 +74,7 @@ export const SPECS: Record<string, Spec[]> = {
   'C.6': sacakAlu('FM-02', '+6,00 → +7,15 (1,15 m)'),
   'C.7': sacakAlu('FM-03', '+5,65 → +6,00 (0,35 m)'),
   'C.8': sp(ALU, { Bant: ['+5,45 → +5,65 (0,20 m), kodsuz', 'görünüş kotları'] }),
+  'C.17': sp(ALU, { 'Levha / panel tipi': ['Alüminyum levha kaplama (cam üstü bandı)', D100], Bant: ['+5,45 → +5,90 (0,45 m), kodsuz', 'görünüş cam üstü / tavan planı CH 590'] }),
   'C.9': sp(ALU, { 'Proje kodu': ['FM-05', GOR] }),
   'C.10': sp(TAS, { 'Proje kodu': ['FP-01 (görünüşte FS-01)', D100], 'Taş türü': ['Traverten', D100], Kalınlık: ['30 mm (kesit B ve detay planındaki taş katmanından ölçüldü; yazıyla verilmemiş)', D100] }),
   'C.11': sp(BOYA, { 'Proje kodu': ['FP-01', GOR], 'Renk (RAL / NCS)': ['Koyu (kodu verilmemiş)', GOR] }),

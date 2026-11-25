@@ -74,7 +74,8 @@ export function MetrajPage({ profile }: { profile: UserProfile }) {
   const values = useMemo(() => Object.fromEntries(items.data.map((i) => [i.id, i.value])), [items.data]);
   const byPoz = useMemo(() => new Map(items.data.map((i) => [i.poz, i])), [items.data]);
   const m3 = useModel3d(!mobile);
-  const highlight = useMemo(() => (selected ? highlightPoz(selected.poz, (p) => byPoz.get(p)?.formula) : null), [selected, byPoz]);
+  const ownPoz = useMemo(() => new Set(m3.model?.elements.flatMap((e) => e.items) ?? []), [m3.model]);
+  const highlight = useMemo(() => (selected ? highlightPoz(selected.poz, (p) => byPoz.get(p)?.formula, (p) => ownPoz.has(p)) : null), [selected, byPoz, ownPoz]);
   // 3B'de tıklanan elemanın hesap detayı satırı
   // source: model = 3B'de elemana tıklandı; table = hesap detayında satıra tıklandı
   const [focus, setFocus] = useState<{ poz: string; line: string | number | null; ref?: string; source: 'model' | 'table' } | null>(null);

@@ -9,7 +9,7 @@ import { readDxf } from '../lib/dxf';
 import { flatten } from '../lib/flatten';
 import { readFileSync } from 'node:fs';
 import { decomposeRegion, mergeRows, type CalcRow } from '../lib/decompose';
-import type { P } from '../lib/geom';
+import { pointInPolygon, type P } from '../lib/geom';
 import type { Line, TakeoffItem } from './model';
 import { formatTr } from '../../../shared/number';
 import { model3d } from './model3d';
@@ -358,14 +358,50 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
   let devL = 0;
   let doorL = 0;
   let wideNo = 0;
+  // Alüminyum doğrama (00-09-100 detay planı / kesit A): dikme 80 × 200 mm, kayıt 200 × 50 mm; cam profilin dış yüzünde, profil içe doğru
+  const MW = 40; // dikme yarı genişliği, mm
+  const MD = 200; // profil derinliği, mm
+  const plate = model3d.find((e) => e.items.includes('A.3'))[0]?.loops?.[0];
+  const unit = (a: P, b: P): P => {
+    const L = Math.hypot(b.x - a.x, b.y - a.y);
+    return { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
+  };
+  /** Bölmenin bina içine bakan birim normali (kat genel sınırına göre). */
+  const inward = (a: P, b: P): P => {
+    const t = unit(a, b);
+    const n = { x: -t.y, y: t.x };
+    const probe = { x: (a.x + b.x) / 2 + n.x * 300, y: (a.y + b.y) / 2 + n.y * 300 };
+    return plate && !pointInPolygon(probe, plate) ? { x: -n.x, y: -n.y } : n;
+  };
+  const rect = (o: P, t: P, n: P, l0: number, l1: number): P[] => [l0, l1].flatMap((l, j) => (j ? [0, MD] : [MD, 0]).map((d) => ({ x: o.x + t.x * l + n.x * d, y: o.y + t.y * l + n.y * d })));
+  const headLines: Line[] = [];
   chains.forEach((c, i) => {
     // 3B: ardışık dikmeler arası; dar bölmeler cam (+0,10 → +5,45), geniş bölmeler kapı (C.14)
     const along = roomsAlong(c.pts, 4000).map((r) => r.label);
     const mid = c.pts[Math.floor(c.pts.length / 2)];
     const c1Line = `Cam hattı ${i + 1} (${c.bays.filter((b) => b <= 2.0).length} bölme): ${along.length ? along.join(', ') + ' önü' : 'mahal bulunamadı'}${c.bays.length > 4 ? `, ${sideOf(mid)} kesimi` : ''}`;
+    const chainL = Math.round(c.bays.reduce((s, b) => s + b, 0) * 1000) / 1000;
+    const headLine = `Cam hattı ${i + 1} üstü: ${along.length ? along.join(', ') + ' önü' : 'mahal bulunamadı'}${c.bays.length > 4 ? `, ${sideOf(mid)} kesimi` : ''}`;
+    headLines.push({ label: headLine, value: r2(chainL * 0.45), unit: 'm²', note: `cam hattı uzunluğu ${formatTr(chainL)} m (kapı bölmeleri dahil) × 0,45 m`, calc: [{ kind: 'dikdörtgen', label: 'bant', name: 'cam hattı uzunluğu × bant yüksekliği', adet: 1, en: chainL, boy: 0.45, sign: 1, value: chainL * 0.45 }] });
     c.bays.forEach((b, k) => {
       const wide = b > 2.0;
-      model3d.add({ layer: 'cephe', kind: 'ribbon', items: wide ? ['C.14'] : ['C.1'], lines: wide ? { 'C.14': wideNo++ } : { 'C.1': c1Line }, label: `${wide ? 'Cam cephe kapı bölmesi' : 'Cam bölmesi'} – hat ${i + 1}, ${b.toFixed(3)} m`, path: [c.pts[k], c.pts[k + 1]], z0: wide ? 0 : 0.1, z1: wide ? 3.0 : 5.45 });
+      const [p0, p1] = [c.pts[k], c.pts[k + 1]];
+      const own: { items: string[]; lines: Record<string, string | number> } = wide ? { items: ['C.14'], lines: { 'C.14': wideNo } } : { items: ['C.1'], lines: { 'C.1': c1Line } };
+      model3d.add({ layer: 'cephe', kind: 'ribbon', ...own, label: `${wide ? 'Cam cephe kapı bölmesi' : 'Cam bölmesi'} – hat ${i + 1}, ${b.toFixed(3)} m`, path: [p0, p1], z0: wide ? 0 : 0.1, z1: wide ? 3.0 : 5.45 });
+      const [t, n] = [unit(p0, p1), inward(p0, p1)];
+      const kayit = rect(p0, t, n, 0, b * 1000);
+      model3d.add({ layer: 'cephe', kind: 'prism', ...own, label: `Alüminyum doğrama üst kayıt 200×50 – hat ${i + 1}`, loops: [kayit], z0: wide ? 3.0 : 5.4, z1: wide ? 3.05 : 5.45 });
+      if (!wide) model3d.add({ layer: 'cephe', kind: 'prism', ...own, label: `Alüminyum doğrama alt kayıt 200×50 – hat ${i + 1}`, loops: [kayit], z0: 0.1, z1: 0.15 });
+      model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['C.17'], lines: { 'C.17': headLine }, label: `Cam üstü alüminyum kaplama – hat ${i + 1} (+5,45 → +5,90)`, path: [p0, p1], z0: 5.45, z1: 5.9 });
+      if (wide) wideNo++;
+    });
+    // dikmeler: her bölme ucunda, iki komşu bölmenin ortalama doğrultusunda (yalnız kapı bölmeli hatta C.1 satırı yok → C.14)
+    const mOwn = c.bays.some((b) => b <= 2.0) ? { items: ['C.1'], lines: { 'C.1': c1Line } } : { items: ['C.14'] };
+    c.pts.forEach((p, k) => {
+      const a = c.pts[Math.max(0, k - 1)];
+      const b = c.pts[Math.min(c.pts.length - 1, k + 1)];
+      const bay = k < c.bays.length ? k : k - 1;
+      model3d.add({ layer: 'cephe', kind: 'prism', ...mOwn, label: `Alüminyum doğrama dikme 80×200 – hat ${i + 1}`, loops: [rect(p, unit(a, b), inward(c.pts[bay], c.pts[bay + 1]), -MW, MW)], z0: 0, z1: 5.45 });
     });
     const normal = c.bays.filter((b) => b <= 2.0);
     const wide = c.bays.filter((b) => b > 2.0);
@@ -408,6 +444,16 @@ export function facadeItems(): { items: TakeoffItem[]; findings: { topic: string
     sources: [{ drawing: '4199-A-DD-01-02-100', where: 'blok 4199_AMG_Glass new2 · dikme aralıkları > 2,0 m' }],
     confidence: 'Düşük',
     lines: chains.flatMap((c, i) => c.bays.map((b, k) => ({ b, k })).filter(({ b }) => b > 2.0).map(({ b, k }) => { const L = Math.round(b * 1000) / 1000; const mid = { x: (c.pts[k].x + c.pts[k + 1].x) / 2, y: (c.pts[k].y + c.pts[k + 1].y) / 2 }; const r = roomsNear(mid, 4000)[0]; return { label: `${r ? r.label + ' girişi' : 'Giriş'} – cam hattı ${i + 1}`, note: `dikme arası ${L.toFixed(3)} m`, value: r2(L), unit: 'm', calc: [{ kind: 'doğru' as const, unit: 'm', label: 'bölme', name: 'iki dikme arası mesafe', adet: 1, boy: L, sign: 1 as const, value: L }] }; })),
+  });
+
+  items.push({
+    poz: 'C.17', group: 'C', code: null, name: 'Alüminyum levha kaplama – cam üstü bandı (+5,45 → +5,90)', unit: 'm²', value: r2(headLines.reduce((s, l) => s + (l.value ?? 0), 0)),
+    method:
+      'Cam cephenin üst kaydı (+5,45) ile saçak / konsol altı tavanı (D.13, CH 590 → +5,90) arasındaki 0,45 m yüksekliğindeki alüminyum kaplama bandı. Uzunluk, C.1\'deki cam cephe dikme zincirlerinin toplam uzunluğudur (kapı bölmeleri dahil; bant kapıların üstünden de geçer). Görünüşlerde bu bant saçak alnının arkasında kaldığı için taranmamış; sistem detayı kesit A\'da (00-09-100) cam başında 171×50 mm alüminyum başlık profili ve üstünde 325×900 mm alüminyum kaplı kutu görülüyor.',
+    sources: [{ drawing: '4199-A-DD-01-02-100', where: 'blok 4199_AMG_Glass new2 · cam cephe dikme zincirleri (C.1 ile aynı)' }, { drawing: '4199-A-DD-00-09-100', where: 'DETAY KESİTİ A · A_Mat_Mtal cam başı profili ve kaplama kutusu' }, { drawing: '4199-A-DD-01-05-100', where: 'saçak altı CH 590' }],
+    confidence: 'Düşük',
+    lines: headLines,
+    notes: ['Bant yüksekliği kotlardan (cam üstü +5,45 görünüşten, saçak altı CH 590 tavan planından) çıkarıldı; detay kesitte kaplama kutusu 0,90 m. Gerçek bant yüksekliği ve kapıların üstü (+3,00 → +5,45) mimarla teyit edilmeli.'],
   });
 
   // --- Görünüş alanından gelen kalemler

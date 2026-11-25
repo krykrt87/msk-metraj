@@ -52,12 +52,14 @@ export interface Underlay {
   layers: { name: string; lines: Record<string, number[][]>; texts?: Record<string, [number, number, number, string, 1?][]> }[];
 }
 
-/** Kalemin 3B'de vurgulanacak pozları: kendisi + formülünde geçen kalemler (özyinelemeli). */
-export function highlightPoz(poz: string, formulaOf: (poz: string) => string | null | undefined): Set<string> {
+/** Kalemin 3B'de vurgulanacak pozları: kendisi + formülünde geçen kalemler (özyinelemeli).
+ *  Kendi 3B elemanı olan kalemin formülüne inilmez (C.5 = B.7 × 0,45 yalnız kendi bandını yakar, bütün saçak alnını değil). */
+export function highlightPoz(poz: string, formulaOf: (poz: string) => string | null | undefined, hasOwn: (poz: string) => boolean = () => false): Set<string> {
   const out = new Set<string>();
   const walk = (p: string) => {
     if (out.has(p)) return;
     out.add(p);
+    if (hasOwn(p)) return;
     const f = formulaOf(p);
     if (f) for (const m of f.matchAll(/\b([A-Z]\.\d+(?:\.\d+)?)\b/g)) walk(m[1]);
   };

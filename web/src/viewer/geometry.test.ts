@@ -46,4 +46,8 @@ describe('highlightPoz', () => {
     const f: Record<string, string> = { 'C.4.1': 'C.4', 'C.4': 'C.2 + C.3' };
     expect([...highlightPoz('C.4.1', (p) => f[p])].sort()).toEqual(['C.2', 'C.3', 'C.4', 'C.4.1']);
   });
+  it('kendi elemanı olan kalemin formülüne inmez', () => {
+    const f: Record<string, string> = { 'C.5': 'B.7 * 0,45' };
+    expect([...highlightPoz('C.5', (p) => f[p], (p) => p === 'C.5' || p === 'B.7')]).toEqual(['C.5']);
+  });
 });

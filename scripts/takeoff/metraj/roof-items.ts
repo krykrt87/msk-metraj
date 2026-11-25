@@ -357,9 +357,12 @@ export function roofItems(): { items: TakeoffItem[]; findings: Finding[] } {
 
   // ---------------------------------------------------------------- B.4 / B.5 alçak çatılar +3,70
   const { sandSingles, neHatch, neB, neOuter, neOB, nwO, nwI } = lowRoofs(site);
+  // altındaki tüm mahaller (3×3 iç nokta; merkez iki oda arasındaki duvara düşebilir), yoksa en yakın mahal
   const under = (b: ReturnType<typeof bbox>) => {
+    const at = [0.2, 0.5, 0.8].flatMap((u) => [0.2, 0.5, 0.8].map((v) => roomAt({ x: b.minX + u * (b.maxX - b.minX), y: b.minY + v * (b.maxY - b.minY) })));
+    const rs = [...new Set(at.filter((r) => r !== null))].sort((a, c) => a.code.localeCompare(c.code));
     const c = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
-    return roomAt(c) ?? roomsNear(c, 8000)[0] ?? null; // altında mahal yoksa en yakın mahal
+    return rs.length ? { label: rs.map((r) => r.label).join(' + ') } : roomsNear(c, 8000)[0] ?? null;
   };
   const neName = under(neB)?.label ?? 'kuzeydoğu';
   items.push({
@@ -618,7 +621,16 @@ Ayrıca 4 adet "kare_kesitli_gider" çizim dışında, (412–465; 0) civarında
   model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.4'], lines: { 'B.4': 'Çakıllı alan (tarama, parapet içi)' }, label: `Alçak çatı +3,70 – ${neName} üstü`, loops: neHatch.loops!, z0: 3.7, z1: 3.7 });
   model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.5'], lines: { 'B.5': 'Parapet içi alan' }, label: `Alçak çatı/teras +3,70 – ${nwName} üstü`, loops: [rc(nwI)], z0: 3.7, z1: 3.7 });
   model3d.add({ layer: 'çatı', kind: 'flat', items: ['B.6'], lines: { 'B.6': 'Saçak çokgeni (serbest kenar ↔ parapet dış yüzü)' }, label: 'Saçak (kanopi) üstü +7,60', loops: [canopyPoly], z0: 7.6, z1: 7.6 });
-  for (const e of canopyEdge) model3d.add({ layer: 'cephe', kind: 'ribbon', items: ['B.7'], lines: { 'B.7': e.label }, label: `Saçak serbest kenarı – ${e.label} (+6,00 → +7,60)`, path: e.pts, z0: 6.0, z1: 7.6 });
+  // saçak alnı görünüşteki bantlarıyla (C.5–C.8, facade-items ile aynı kotlar); alt bant saçak altının (+5,90) altına iner, arada boşluk kalmaz
+  const eaveBands: [string, string, number, number, string][] = [
+    ['C.5', 'Saçak FM-01 üst bant', 7.15, 7.6, '0,45'],
+    ['C.6', 'Saçak FM-02 alın bandı', 6.0, 7.15, '1,15'],
+    ['C.7', 'Saçak FM-03 alt bant', 5.65, 6.0, '0,35'],
+    ['C.8', 'Saçak altı şerit', 5.45, 5.65, '0,2'],
+  ];
+  for (const e of canopyEdge)
+    for (const [poz, what, z0, z1, hs] of eaveBands)
+      model3d.add({ layer: 'cephe', kind: 'ribbon', items: [poz, 'B.7'], lines: { [poz]: `B.7 Saçak serbest kenar uzunluğu × ${hs} m`, 'B.7': e.label }, label: `${what} (${poz}) – ${e.label} (${kz(z0)} → ${kz(z1)})`, path: e.pts, z0, z1 });
   for (const { h, S, roof, shell, parapet } of hallGeo) {
     const [r1, t0, t1] = [S.roof + S.rise, S.top, S.top + S.rise];
     model3d.add({ layer: 'çatı', kind: 'mesh', items: ['B.2'], lines: { 'B.2': b2Line(h) }, label: `${h.name} çatısı (parapet içi) ${kz(S.roof)} dere → ${kz(r1)} tepe`, faces: roof, z0: S.roof, z1: r1 });

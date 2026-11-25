@@ -570,7 +570,8 @@ export function ceilingItems(
     const z = (h.mf ? 3.8 : 0) + (ch > 0 ? ch / 100 : h.code === 'SOFFIT' ? 5.9 : h.lvl === 'L' ? 3.0 : 6.5);
     const ln = lineOf.get(h);
     const line = !ln ? undefined : poz === 'D.12' ? `Brüt: ${ln}` : ln;
-    model3d.add({ layer: 'tavan', kind: 'flat', items: [poz], ...(line ? { lines: { [poz]: line } } : {}), label: `${h.code} – ${roomOf(h)} (CH ${ch > 0 ? ch : '?'}) – ${h.area.toFixed(2)} m²`, loops: h.g, z0: z, z1: z });
+    // saçak / konsol altı dış kaplamadır: kapalı başlayan tavan katmanında değil, cephede görünür
+    model3d.add({ layer: h.code === 'SOFFIT' ? 'cephe' : 'tavan', kind: 'flat', items: [poz], ...(line ? { lines: { [poz]: line } } : {}), label: h.code === 'SOFFIT' && ln ? `${ln} – ${h.area.toFixed(2)} m²` : `${h.code} – ${roomOf(h)} (CH ${ch > 0 ? ch : '?'}) – ${h.area.toFixed(2)} m²`, loops: h.g, z0: z, z1: z });
   }
   return { items, roomCeilings, findings };
 }
