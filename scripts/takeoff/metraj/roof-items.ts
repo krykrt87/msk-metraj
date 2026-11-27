@@ -120,7 +120,8 @@ function lowRoofs(site: Flat[]) {
 /**
  * Zemin kat duvarının üst kotu, üstündeki çatıya göre: +3,70 alçak çatıların (dış kutu) altında 3,70; başka her yerde
  * +7,10 (teras döşemesi; salonlarda +7,10 üstü kabuk duvar C.4 ayrı kalemde).
- * shortcut: döşeme kalınlığı düşülmedi ve asma kat (+3,80) altı ayrılmadı; kesit/döşeme kalınlığı netleşince güncellenir.
+ * Asma kat (+3,80) altındaki iç bölmeler gf-items.ts içinde ayrılır.
+ * shortcut: döşeme kalınlığı düşülmedi; kesit/döşeme kalınlığı netleşince güncellenir.
  */
 export function wallTopAt(): (p: P) => { z: number; where: string } {
   const { neOB, nwO } = lowRoofs(siteOf(loadRoof().flat));

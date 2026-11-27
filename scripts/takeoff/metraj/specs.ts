@@ -113,6 +113,7 @@ export const SPECS: Record<string, Spec[]> = {
   'G.2': sp(['Duvar malzemesi', 'Blok / tuğla ölçüsü', 'Duvar kalınlıkları', 'Harç / yapıştırıcı', 'Sıva'], { 'Duvar malzemesi': ['paftada belirtilmemiş', 'zemin kat planı'], 'Duvar kalınlıkları': ['taramadan 5 cm sınıflarında (hesap detayında)', 'zemin kat planı'] }),
   // shortcut: G.3.n ↔ kalınlık eşlemesi şimdiki taramadaki sınıflardan (10/15/20/25 cm); sınıf eklenirse güncellenir
   ...Object.fromEntries([10, 15, 20, 25].map((t, i) => [`G.3.${i + 1}`, sp(['Duvar malzemesi', 'Blok / tuğla ölçüsü', 'Duvar kalınlığı', 'Harç / yapıştırıcı', 'Sıva'], { 'Duvar malzemesi': ['paftada belirtilmemiş', 'zemin kat planı'], 'Duvar kalınlığı': [`~${t} cm (taramadan)`, 'zemin kat planı'] })])),
+  'G.6': sp(['Duvar malzemesi', 'Blok / tuğla ölçüsü', 'Duvar kalınlığı', 'Harç / yapıştırıcı', 'Sıva'], { 'Duvar malzemesi': ['paftada belirtilmemiş', 'asma kat planı 01-02-200'], 'Duvar kalınlığı': ['~20 cm (taramadan)', 'asma kat planı 01-02-200'] }),
   'G.4': sp(['Marka / sistem', 'Ray tipi', 'Ses yalıtımı (Rw)', 'Panel yüksekliği'], { 'Marka / sistem': ['Movatech (plan bloğu adı)', 'zemin kat planı'] }),
   'G.5': sp(['Marka / sistem', 'Panel tipleri', 'Panel kalınlığı', 'Ses yalıtımı (Rw)', 'Yüzey kaplaması', 'Panel yüksekliği'], { 'Marka / sistem': ['Movatech (plan bloğu adı)', 'zemin kat planı'], 'Panel tipleri': ['standart + teleskopik + kapılı', 'zemin kat planı'] }),
   // --- Kapılar

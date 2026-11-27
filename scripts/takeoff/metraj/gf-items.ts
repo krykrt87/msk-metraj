@@ -22,6 +22,34 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
  * shortcut: kapı yüksekliği 2,20 m (kapı pinleriyle aynı; planda yok), kesit/görünüşten alınırsa güncellenir.
  */
 const DOOR_H = 2.2;
+const MF_DX = 465300; // asma kat planının çizimdeki doğu kayması (mm)
+const MF_Z = 3.8; // asma kat döşeme üst kotu (m)
+const MF_WALLS = '4199_AMH_Walls_MF_n';
+
+/** Duvar taramasının eşdeğer dikdörtgeni: alan A, çevre P → kalınlık t = (P/2 − √((P/2)² − 4A)) / 2, uzunluk L = A / t. */
+function eqRect(loops: P[][]) {
+  const A = regionArea(loops);
+  const Pm = loops.reduce((s, l) => s + length(l, true), 0);
+  const disc = (Pm / 2) ** 2 - 4 * A;
+  const t = disc > 0 ? (Pm / 2 - Math.sqrt(disc)) / 2 : Math.sqrt(A);
+  return { A, t, L: A / t };
+}
+
+/** loops bölgesinin others bölgeleri içinde kalan payı (0–1), 50 mm ızgara örneklemesi. */
+export function covered(loops: P[][], others: { loops: P[][]; b: { minX: number; minY: number; maxX: number; maxY: number } }[]): number {
+  const inL = (p: P, ls: P[][]) => ls.filter((l) => pointInPolygon(p, l)).length % 2 === 1;
+  const b = bbox(loops.flat());
+  let n = 0;
+  let hit = 0;
+  for (let x = b.minX + 25; x < b.maxX; x += 50)
+    for (let y = b.minY + 25; y < b.maxY; y += 50) {
+      const p = { x, y };
+      if (!inL(p, loops)) continue;
+      n++;
+      if (others.some((o) => x >= o.b.minX && x <= o.b.maxX && y >= o.b.minY && y <= o.b.maxY && inL(p, o.loops))) hit++;
+    }
+  return n ? hit / n : 0;
+}
 type Opening = { d: Door; wall: Raw3; lintel: Raw3; width: number; cut: boolean };
 function cutDoorOpenings(doors: Door[], walls: Raw3[], flat: Flat[], name: (d: Door) => string, thick: Map<Raw3, number>): Opening[] {
   const out: Opening[] = [];
@@ -172,6 +200,14 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
 
   // --- Duvarlar (A_Patt_Wall taramaları)
   const walls = flat.filter((f) => top(f) === '4199_AMH_Walls_GF' && f.layer === 'A_Patt_Wall' && f.t === 'HATCH' && f.loops);
+  // Asma kat: mahal sınırları ve duvar bloğu planda +465,3 m doğuya kaydırılmış (build.ts ile aynı) → geri alınır.
+  const mfBack = (l: P[]) => l.map((p) => ({ x: p.x - MF_DX, y: p.y }));
+  const mfFoot = flat.filter((f) => f.layer === 'A_Nplt_Area' && f.closed && f.pts && bbox(f.pts).minX > 1000e3 && area(f.pts) > 5e6).map((f) => mfBack(f.pts!));
+  const withBox = (loops: P[][]) => ({ loops, b: bbox(loops.flat()) });
+  const mfWalls = flat.filter((f) => top(f) === MF_WALLS && f.layer === 'A_Patt_Wall' && f.t === 'HATCH' && f.loops).map((h) => withBox(h.loops!.map(mfBack)));
+  const gfWallBoxes = walls.map((h) => withBox(h.loops!));
+  /** Asma kat altındaki iç bölme: merkezi asma kat sınırı içinde ve asma kat duvar bloğunda üstte devamı yok → +3,80 döşemesinde biter. */
+  const underMf = (c: P, loops: P[][]) => mfFoot.some((r) => pointInPolygon(c, r)) && covered(loops, mfWalls) < 0.5;
   type Piece = { t: number; L: number; raw: Raw3; c: P; top: { z: number; where: string } };
   const cls = new Map<number, { n: number; L: number; A: number; ext: number; pcs: Piece[] }>();
   const wallRaws: { raw: Raw3; tc: number }[] = [];
@@ -179,13 +215,10 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     const b = bbox(h.loops![0]);
     const c = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
     // shortcut: yükseklik parçanın orta noktasına göre; iki çatı bölgesine taşan parça tek yükseklik alır
-    const wt = wallTop(c);
+    const roofTop = wallTop(c);
+    const wt = roofTop.z > MF_Z && underMf(c, h.loops!) ? { z: MF_Z, where: '+3,80 asma kat döşemesi altı' } : roofTop;
     const wallRaw = model3d.add({ layer: 'duvar', kind: 'prism', items: ['G.1', 'G.2'], label: 'Duvar (A_Patt_Wall taraması)', loops: h.loops!, z0: 0, z1: wt.z });
-    const A = regionArea(h.loops!);
-    const Pm = h.loops!.reduce((s, l) => s + length(l, true), 0);
-    const disc = (Pm / 2) ** 2 - 4 * A;
-    const t = disc > 0 ? (Pm / 2 - Math.sqrt(disc)) / 2 : Math.sqrt(A);
-    const L = A / t;
+    const { A, t, L } = eqRect(h.loops!);
     const tc = Math.max(100, Math.round(t / 50) * 50);
     const ext = plate.pts.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < Math.max(1000, L / 2));
     const k = cls.get(tc) ?? { n: 0, L: 0, A: 0, ext: 0, pcs: [] };
@@ -337,7 +370,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     return {
       poz, group: 'G', name: `Zemin kat duvarı ~${tc / 10} cm – yüzey alanı (tek yüz)`, unit: 'm²', value: r2(total),
       method:
-        `~${tc / 10} cm sınıfındaki her duvar parçasının (A_Patt_Wall taraması, uzunluğu G.1'deki gibi L = A / t) uzunluğu × yüksekliği. Yükseklik, parçanın üstündeki çatının döşeme kotundan: +3,70 alçak çatıların altında 3,70 m, diğer yerlerde (teras, salonlar) 7,10 m; salonlarda +7,10 üstündeki kabuk duvar C.4'te ayrı. Taraması kapıda kesik olan kapıların üstüne lento eklendi (kapı genişliği × (yükseklik − ${kot(DOOR_H).slice(1)})); taraması kapıdan kesilmeden geçen kapılarda kapı boşluğu düşüldü (genişlik × ${kot(DOOR_H).slice(1)}). Kapı genişliği, kapı bloğu çizgilerinin duvar boyunca uzanımı. Tek yüz alanıdır; sıva/boya için iki yüz ayrıca hesaplanmalı.`,
+        `~${tc / 10} cm sınıfındaki her duvar parçasının (A_Patt_Wall taraması, uzunluğu G.1'deki gibi L = A / t) uzunluğu × yüksekliği. Yükseklik, parçanın üstündeki çatının döşeme kotundan: +3,70 alçak çatıların altında 3,70 m, asma kat altındaki iç bölmelerde 3,80 m (asma kat döşemesi), diğer yerlerde (teras, salonlar) 7,10 m; salonlarda +7,10 üstündeki kabuk duvar C.4'te ayrı. Taraması kapıda kesik olan kapıların üstüne lento eklendi (kapı genişliği × (yükseklik − ${kot(DOOR_H).slice(1)})); taraması kapıdan kesilmeden geçen kapılarda kapı boşluğu düşüldü (genişlik × ${kot(DOOR_H).slice(1)}). Kapı genişliği, kapı bloğu çizgilerinin duvar boyunca uzanımı. Tek yüz alanıdır; sıva/boya için iki yüz ayrıca hesaplanmalı.`,
       sources: [
         { drawing: GF, where: 'blok 4199_AMH_Walls_GF · katman A_Patt_Wall · kapı blokları A_Door_Wood' },
         { drawing: '4199-A-DD-01-02-300', where: 'çatı planı · +3,70 alçak çatı kutuları, +7,10 teras kotu' },
@@ -350,7 +383,7 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
       ],
       notes: [
         'Duvar yüksekliği döşeme üst kotuna kadar alındı; döşeme kalınlığı düşülmedi.',
-        'Asma kat (+3,80) altındaki duvarlar ayrılmadı; orada da çatı kotu alındı.',
+        'Asma kat altındaki iç bölmeler (merkezi asma kat sınırı içinde, asma kat duvar bloğunda üstte devamı olmayan) +3,80 asma kat döşemesine kadar alındı; asma kat üstündeki duvarlar G.6.',
         `Kapı yüksekliği ${kot(DOOR_H).slice(1)} m varsayıldı (planda yok). Pencere/cam bölme açıklıkları düşülmedi (duvar taramasında zaten yoklar).`,
       ],
     };
@@ -359,6 +392,32 @@ export function gfItems(dxf: RawDxf, flat: Flat[], rooms: RoomRow[], plate: { pt
     poz: 'G.3', group: 'G', name: 'Zemin kat duvarları – yüzey alanı toplamı (tek yüz)', unit: 'm²', value: r2(g3.reduce((s, i) => s + (i.value ?? 0), 0)),
     formula: g3.map((i) => i.poz).join(' + '),
     method: 'Kalınlık sınıflarına göre duvar yüzey alanı kalemlerinin toplamı.', sources: [], confidence: 'Orta', lines: [],
+  });
+
+  // --- Asma kat duvarları: asma kat duvar bloğunda olup altında zemin kat duvarı olmayan parçalar (+3,80 → çatı)
+  const mfFace = mfWalls
+    .filter((w) => covered(w.loops, gfWallBoxes) < 0.1)
+    .map((w) => {
+      const c = { x: (w.b.minX + w.b.maxX) / 2, y: (w.b.minY + w.b.maxY) / 2 };
+      const { t, L } = eqRect(w.loops);
+      const z1 = wallTop(c).z;
+      const near = roomsNear(c, 3000)[0]?.label;
+      const raw = model3d.add({ layer: 'duvar', kind: 'prism', items: ['G.6'], lines: { 'G.6': 'Duvar yüzleri' }, label: `Asma kat duvarı ~${Math.round(t / 10)} cm`, loops: w.loops, z0: MF_Z, z1 });
+      const row: CalcRow = { kind: 'dikdörtgen', label: 'duvar yüzü', name: `~${Math.round(t / 10)} cm${near ? `, ${near} yanında` : ''}, ${kot(MF_Z)} → ${kot(z1)}`, adet: 1, en: mm3(L), boy: m3(z1 - MF_Z), sign: 1, value: mm3(L) * m3(z1 - MF_Z) };
+      link(raw, row);
+      return { row, L };
+    });
+  items.push({
+    poz: 'G.6', group: 'G', name: 'Asma kat duvarları – yüzey alanı (tek yüz)', unit: 'm²', value: r2(csum(mfFace.map((f) => f.row))),
+    method:
+      `Asma kat planındaki duvar bloğunun (${MF_WALLS}, katman A_Patt_Wall; plan +465,3 m doğuya kaydırılmış, geri alındı) her parçası zemin kat duvar taramalarıyla 50 mm ızgarada örtüştürüldü. Altında zemin kat duvarı olmayan (örtüşme < %10) parçalar asma kat duvarı sayıldı: salonun kuzeyinde teknik alana bakan ikinci duvar kabuğu. Uzunluk G.1'deki gibi L = A / t; yükseklik +3,80 asma kat döşemesinden üstündeki çatının döşeme kotuna. Örtüşen parçalar zemin kat duvarının devamıdır, G.3'te tam boy sayılıyor.`,
+    sources: [
+      { drawing: '4199-A-DD-01-02-200', where: `blok ${MF_WALLS} · katman A_Patt_Wall` },
+      { drawing: GF, where: 'blok 4199_AMH_Walls_GF · katman A_Patt_Wall (örtüşme kontrolü)' },
+    ],
+    confidence: 'Orta',
+    lines: [{ label: 'Duvar yüzleri', value: r2(csum(mfFace.map((f) => f.row))), unit: 'm²', note: `${mfFace.length} parça · toplam uzunluk ${r2(mfFace.reduce((s, f) => s + f.L, 0) / 1000)} m`, calc: mfFace.map((f) => f.row) }],
+    notes: ['Duvar malzemesi paftada belirtilmemiş. Asma kat döşeme kotu +3,80; döşeme kalınlığı düşülmedi.'],
   });
   sorted.forEach(([k, n], i) => {
     items.push({
