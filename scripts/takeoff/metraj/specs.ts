@@ -9,6 +9,7 @@ const D100 = '00-09-100 sistem detayı';
 const D101 = '02-09-101 sistem detayı';
 const GOR = 'görünüş paftaları (malzeme etiketi)';
 const TAV = '01-05-100 tavan planı lejantı';
+const SET = '261116 Mimari Set Baskı';
 
 function sp(fields: string[], known: Record<string, V> = {}): Spec[] {
   const out: Spec[] = fields.map((label) => ({ label, value: null }));
@@ -64,11 +65,11 @@ export const SPECS: Record<string, Spec[]> = {
   // --- Cephe
   'C.1': sp(CAM, { 'Proje kodu': ['FG-01', GOR], 'Bölme yüksekliği': ['5,35 m (+0,10 → +5,45); sistem detayında 5,50 m', 'görünüş / kesit'] }),
   'C.2': sp(ALU, { 'Proje kodu': ['FM-01', GOR] }),
-  'C.3': sp(ALU, { 'Proje kodu': ['FM-04', GOR] }),
+  'C.3': sp(ALU, { 'Proje kodu': ['FM-04', GOR], Not: ['Görünüşte FM-04 etiketinin açıklaması yok (11 etiket) — tanımsız, mimara sorulacak', `${GOR}; ${SET}`] }),
   'C.4.1': sp(ALU, { 'Levha / panel tipi': ['Alüminyum levha kaplama', D101], Kalınlık: ['3 mm', D101] }),
   'C.4.2': sp(['Karkas profili', 'Yalıtım tipi', 'Yalıtım kalınlığı', 'Isıl iletkenlik λ'], { 'Karkas profili': ['40×40 kutu', D101], 'Yalıtım kalınlığı': ['60 mm', D101] }),
   'C.4.3': sp(LEVHA, { Tip: ['Çimento esaslı levha', D101], 'Levha kalınlığı': ['12,5 mm', D101], 'Kat sayısı': '1' }),
-  'C.4.4': sp([...CELIK, 'Yalıtım'], { 'Profil / ebat': ['94 mm çelik karkas (profil ebatı belirtilmemiş)', D101], Yalıtım: ['50 mm (türü verilmemiş)', D101] }),
+  'C.4.4': sp([...CELIK, 'Yalıtım'], { 'Profil / ebat': ['50×90 dikey profil (94 mm karkas; teyit edilmeli)', `${SET}, A-A kesiti iç parapet detayı`], Yalıtım: ['50 mm (türü verilmemiş)', D101] }),
   'C.4.5': sp(LEVHA, { Tip: ['Çimento esaslı levha', D101], 'Levha kalınlığı': ['12,5 mm', D101], 'Kat sayısı': '2' }),
   'C.5': sacakAlu('FM-01', '+7,15 → +7,60 (0,45 m)'),
   'C.6': sacakAlu('FM-02', '+6,00 → +7,15 (1,15 m)'),
@@ -76,8 +77,8 @@ export const SPECS: Record<string, Spec[]> = {
   'C.8': sp(ALU, { Bant: ['+5,45 → +5,65 (0,20 m), kodsuz', 'görünüş kotları'] }),
   'C.17': sp(ALU, { 'Levha / panel tipi': ['Alüminyum levha kaplama (cam üstü bandı)', D100], Bant: ['+5,45 → +5,90 (0,45 m), kodsuz', 'görünüş cam üstü / tavan planı CH 590'] }),
   'C.9': sp(ALU, { 'Proje kodu': ['FM-05', GOR] }),
-  'C.10': sp(TAS, { 'Proje kodu': ['FP-01 (görünüşte FS-01)', D100], 'Taş türü': ['Traverten', D100], Kalınlık: ['30 mm (kesit B ve detay planındaki taş katmanından ölçüldü; yazıyla verilmemiş)', D100] }),
-  'C.11': sp(BOYA, { 'Proje kodu': ['FP-01', GOR], 'Renk (RAL / NCS)': ['Koyu (kodu verilmemiş)', GOR] }),
+  'C.10': sp(TAS, { 'Proje kodu': ['FP-01 (görünüşte FS-01)', D100], 'Taş türü': ['Traverten', D100], Kalınlık: ['30 mm (kesit B ve detay planındaki taş katmanından ölçüldü; yazıyla verilmemiş)', D100], Not: ['Kod çakışması: detayda FP-01 = traverten, görünüşte FP-01 = sıva+boya (C.11)', `${D100}; ${GOR}`] }),
+  'C.11': sp(BOYA, { 'Proje kodu': ['FP-01', GOR], 'Renk (RAL / NCS)': ['Koyu (kodu verilmemiş)', GOR], Not: ['Kod çakışması: sistem detayında FP-01 traverten için kullanılmış (C.10)', `${D100}; ${GOR}`] }),
   'C.12': sp(['Malzeme', 'Kalınlık', 'Renk', 'Kolon kaplama genişliği'], { 'Kolon kaplama genişliği': ['0,70 m', 'görünüş'] }),
   'C.15': sp(ALU, { 'Proje kodu': ['FP-03', D100], 'Levha / panel tipi': 'Harpuşta alüminyum levha', Kalınlık: ['3 mm', D100], 'Açınım genişliği': ['0,704 m', D100] }),
   'C.16': sp(ALU, { 'Levha / panel tipi': 'Harpuşta alüminyum levha', Kalınlık: ['2 mm', D101], 'Açınım genişliği': ['~0,68 m', D101] }),
