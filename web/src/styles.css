@@ -1021,6 +1021,9 @@ label.check {
   max-width: 260px;
   max-height: calc(100% - 20px);
 }
+.v3-side[hidden] {
+  display: none;
+}
 .v3-ul-layers summary {
   cursor: pointer;
   color: var(--ink-2);
@@ -1287,6 +1290,18 @@ table.specs input {
 }
 .malzeme-table .mrow {
   cursor: pointer;
+}
+.th-sort {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.th-sort:focus-visible {
+  outline: 2px solid var(--stamp);
+  outline-offset: 1px;
 }
 .malzeme-table .mrow:hover td {
   background: #f9faf9;

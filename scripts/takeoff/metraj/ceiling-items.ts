@@ -22,6 +22,11 @@ const DX = 465300;
 /** Bina pencereleri (mm) — dışındaki her şey (lejant örnekleri, uzak çöp) hariç. */
 const WIN = { L: [590e3, 5935e3, 750e3, 6040e3], U: [1060e3, 5935e3, 1220e3, 6040e3] } as const;
 const RASTER = 50; // mm, çakışma ölçümü ızgarası
+// Baffle sistemi kesiti (01-03-100 "baffle_tavan kesit" bloğu), m, bıçak altına göre
+const BLADE_H = 0.1; // bıçak (A_Mat_Tmbr 100 mm)
+const CARRIER_Z = [0.156, 0.186] as const; // L 30×30 taşıyıcı ("L profil construction")
+// shortcut: askı üstü tek kot (+7,10 teras döşemesi − 470 mm, kesitteki askı ucu); fuaye/koridor dışına baffle eklenirse döşemeye göre alın
+const SLAB_UNDER = 6.63;
 
 type Lvl = 'L' | 'U';
 type Finding = { topic: string; drawings: string; finding: string; suggestion: string };
@@ -39,6 +44,82 @@ interface CH {
   col: string;
   scale: string;
   mf: RoomLabel | null; // asma kat mahalinin tavanı ise
+  pat: PatLine[]; // tarama deseninin çizgi aileleri (çizim koordinatı)
+}
+
+/** HATCH desen çizgisi (DXF 53/43/44/45/46): açı (°), geçtiği nokta, aileler arası öteleme (mm). */
+export type PatLine = { ang: number; base: P; off: P };
+
+const dot = (p: P, q: P) => p.x * q.x + p.y * q.y;
+const dirOf = (ang: number) => {
+  const t = (ang * Math.PI) / 180;
+  const d = { x: Math.cos(t), y: Math.sin(t) };
+  return { d, n: { x: -d.y, y: d.x } };
+};
+
+/** ang yönündeki, n·p = c0 + k·step doğrularının loops içinde (çift-tek), cut halkaları dışında kalan açıklıkları. */
+function stripSpans(loops: P[][], ang: number, c0: number, step: number, cut: P[][][]): { v: number; s: number; e: number }[] {
+  const { d, n } = dirOf(ang);
+  const spans = (ls: P[][], v: number) => {
+    const us: number[] = [];
+    for (const l of ls)
+      for (let i = 0, j = l.length - 1; i < l.length; j = i++) {
+        const vi = dot(l[i], n);
+        const vj = dot(l[j], n);
+        if (vi > v !== vj > v) us.push(dot(l[j], d) + ((v - vj) / (vi - vj)) * (dot(l[i], d) - dot(l[j], d)));
+      }
+    us.sort((p, q) => p - q);
+    const out: [number, number][] = [];
+    for (let k = 0; k + 1 < us.length; k += 2) out.push([us[k], us[k + 1]]);
+    return out;
+  };
+  const vs = loops.flat().map((p) => dot(p, n));
+  const vMax = Math.max(...vs);
+  const out: { v: number; s: number; e: number }[] = [];
+  for (let k = Math.ceil((Math.min(...vs) - c0) / step); c0 + k * step <= vMax; k++) {
+    const v = c0 + k * step;
+    let segs = spans(loops, v);
+    for (const [c0u, c1u] of cut.flatMap((c) => spans(c, v)))
+      segs = segs.flatMap(([s, e]): [number, number][] => (c1u <= s || c0u >= e ? [[s, e]] : ([[s, c0u], [c1u, e]] as [number, number][]).filter(([x, y]) => y - x > 0)));
+    for (const [s, e] of segs) if (e - s > 10) out.push({ v, s, e });
+  }
+  return out;
+}
+
+/** (u, v) çerçevesinde [u0,u1]×[v0,v1] dikdörtgeni, çizim koordinatında. */
+function rectUV(ang: number, u0: number, u1: number, v0: number, v1: number): P[] {
+  const { d, n } = dirOf(ang);
+  const pt = (u: number, v: number): P => ({ x: u * d.x + v * n.x, y: u * d.y + v * n.y });
+  return [pt(u0, v0), pt(u1, v0), pt(u1, v1), pt(u0, v1)];
+}
+
+/** Baffle sistemi planı (mm). Bıçaklar: desenin ilk iki çizgisi bir bıçağın iki yüzü (C-B01: 50 mm, 150 mm aks).
+ *  Taşıyıcılar bıçaklara dik, carrierStep aralıkla; askılar taşıyıcı ekseninde hangerStep aralıkla.
+ *  Hepsi tarama içinde (çift-tek) kırpılır, cut halkalarının içi düşülür. */
+export function baffleSystem(
+  loops: P[][],
+  pat: PatLine[],
+  cut: P[][][] = [],
+  o = { carrierStep: 929, carrierW: 30, hangerStep: 1200, hangerD: 6 },
+): { blades: P[][]; carriers: P[][]; hangers: P[][] } {
+  const [a, b] = pat;
+  const { d, n } = dirOf(a.ang);
+  const w = dot(b.base, n) - dot(a.base, n);
+  const blades = stripSpans(loops, a.ang, dot(a.base, n) + w / 2, Math.abs(dot(a.off, n)), cut).map((x) => rectUV(a.ang, x.s, x.e, x.v - w / 2, x.v + w / 2));
+  // taşıyıcı çerçevesi: yön n, normali −d; ızgara taramanın köşesinden yarım aralıkla başlar
+  const cAng = a.ang + 90;
+  const us = loops.flat().map((p) => -dot(p, d));
+  const vs = loops.flat().map((p) => dot(p, n));
+  const cs = stripSpans(loops, cAng, Math.min(...us) + o.carrierStep / 2, o.carrierStep, cut);
+  const carriers = cs.map((x) => rectUV(cAng, x.s, x.e, x.v - o.carrierW / 2, x.v + o.carrierW / 2));
+  const h0 = Math.min(...vs) + o.hangerStep / 2;
+  const hangers = cs.flatMap((x) => {
+    const out: P[][] = [];
+    for (let u = h0 + Math.ceil((x.s - h0) / o.hangerStep) * o.hangerStep; u <= x.e; u += o.hangerStep)
+      out.push(rectUV(cAng, u - o.hangerD / 2, u + o.hangerD / 2, x.v - o.hangerD / 2, x.v + o.hangerD / 2));
+    return out;
+  });
+  return { blades, carriers, hangers };
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -70,11 +151,26 @@ function interiorPoint(loops: P[][]): P {
 }
 
 /** Ham HATCH öznitelikleri (renk 62, desen ölçeği 41) — flatten ile aynı DFS sırasında. */
-function hatchProps(d: RawDxf): { col: string; scale: string }[] {
-  const out: { col: string; scale: string }[] = [];
+function hatchProps(d: RawDxf): { col: string; scale: string; pat: PatLine[] }[] {
+  const out: { col: string; scale: string; pat: PatLine[] }[] = [];
   const g = (e: RawEnt, c: number) => e.pairs.find(([cc]) => cc === c)?.[1]?.trim();
+  // shortcut: blok eklemesi dönüşümü uygulanmaz; tavan blokları (0,0)'a ölçeksiz eklenmiş, başka çizimde kullanılırsa dönüştürün
+  const patOf = (e: RawEnt): PatLine[] => {
+    const pat: PatLine[] = [];
+    const i = e.pairs.findIndex(([c]) => c === 78);
+    for (const [c, v] of i < 0 ? [] : e.pairs.slice(i + 1)) {
+      if (![53, 43, 44, 45, 46, 79, 49].includes(c)) break;
+      if (c === 53) pat.push({ ang: +v, base: { x: 0, y: 0 }, off: { x: 0, y: 0 } });
+      const p = pat[pat.length - 1];
+      if (c === 43) p.base.x = +v;
+      if (c === 44) p.base.y = +v;
+      if (c === 45) p.off.x = +v;
+      if (c === 46) p.off.y = +v;
+    }
+    return pat;
+  };
   const walk = (e: RawEnt, depth: number) => {
-    if (e.type === 'HATCH') out.push({ col: g(e, 62) ?? 'BL', scale: g(e, 41) ?? '-' });
+    if (e.type === 'HATCH') out.push({ col: g(e, 62) ?? 'BL', scale: g(e, 41) ?? '-', pat: patOf(e) });
     if (e.type === 'INSERT') {
       const blk = d.blocks.get(g(e, 2) ?? '');
       const n = Math.max(1, parseInt(g(e, 70) ?? '1', 10)) * Math.max(1, parseInt(g(e, 71) ?? '1', 10));
@@ -182,7 +278,7 @@ export function ceilingItems(
       continue;
     }
     const calc = mergeRows(decomposeRegion(f.loops));
-    hs.push({ idx: hi - 1, code, lvl, f, loops: f.loops, g: lvl === 'U' ? shift(f.loops, -DX) : f.loops, area: calc.reduce((t, r) => t + r.value, 0), calc, col: pr.col, scale: pr.scale, mf: null });
+    hs.push({ idx: hi - 1, code, lvl, f, loops: f.loops, g: lvl === 'U' ? shift(f.loops, -DX) : f.loops, area: calc.reduce((t, r) => t + r.value, 0), calc, col: pr.col, scale: pr.scale, mf: null, pat: lvl === 'U' ? pr.pat.map((q) => ({ ...q, base: { x: q.base.x - DX, y: q.base.y } })) : pr.pat });
   }
   const lowerH = hs.filter((h) => h.lvl === 'L');
   const upperH = hs.filter((h) => h.lvl === 'U');
@@ -557,6 +653,7 @@ export function ceilingItems(
   for (const h of multi)
     F('Ortak tarama', `${roomOf(h)} tek ${h.code} taramasıyla çizilmiş (${tr(h.area)} m²).`, 'Bilgi; mahal bazında ayrım gerekiyorsa sınırlardan bölün.');
   F('Baffle çakışması', `Üst plandaki C-B01 fuaye taraması, alçak tavanlı kutuların (rüzgarlık, vestiyerler, salon girişleri) üstünden geçiyor: ${tr(ovTot)} m². Net değer bu kısım düşülerek verildi.`, 'Baffle\'ın kutuların üstünde devam edip etmediğini teyit edin.');
+  F('Baffle kotu', 'Tavan planında C-B01 CH 532; kesitte (01-03-100) kot etiketi "+5.42" (CH 532 + 100 mm bıçak = bıçak üstü), ama "baffle_tavan kesit" bloğunun bıçakları +5,15–5,25\'te çizilmiş ve kot sembolünün ucu +5,15\'i gösteriyor. 3B modelde bıçak altı CH 532 alındı.', 'Kesitteki baffle bloğunu +5,32\'ye taşıyın ya da CH değerini düzeltin.', `${CEIL}, 4199-A-DD-01-03-100`);
   F('Desen ayrımı', 'C-G01 ile C-G02 aynı AR-SAND deseniyle çizilmiş, yalnızca renk farklı (BYLAYER / 219). C-M01 ile C-M02 aynı NET deseniyle çizilmiş, yalnızca katman öneki ve desen ölçeği farklı (189 / 31,5).', 'Çizimde ayırt edici desen kullanılmalı; metrajda renk/ölçek ham DXF\'ten okundu.');
   F('Saçak altı', `TRIANG desenli saçak altı bandı (${tr(sum(sof))} m², CH 590) tavan lejantında yok; malzeme kesit notlarından (alüminyum levha kaplama) alındı.`, 'Lejanta saçak altı kaplama tipi eklenmeli.', `${CEIL}, 4199-A-DD-01-03-100, 4199-A-DD-01-09-101`);
 
@@ -570,6 +667,22 @@ export function ceilingItems(
     const z = (h.mf ? 3.8 : 0) + (ch > 0 ? ch / 100 : h.code === 'SOFFIT' ? 5.9 : h.lvl === 'L' ? 3.0 : 6.5);
     const ln = lineOf.get(h);
     const line = !ln ? undefined : poz === 'D.12' ? `Brüt: ${ln}` : ln;
+    if (h.code === 'C-B01' && h.pat.length >= 2) {
+      // CH bıçak altıdır; kesit 01-03-100'deki "+5.42" etiketi bıçak üstü (CH 532 + 100 mm bıçak).
+      // Alçak kutuların (alt plan taramaları) üstü metrajda düşüldüğü için burada da kesilir.
+      const hb = bbox(h.g.flat());
+      const cut = lowerH.map((l) => l.loops).filter((ls) => {
+        const b = bbox(ls.flat());
+        return b.maxX > hb.minX && b.minX < hb.maxX && b.maxY > hb.minY && b.minY < hb.maxY;
+      });
+      const { blades, carriers, hangers } = baffleSystem(h.g, h.pat, cut);
+      const base = { layer: 'tavan' as const, kind: 'prism' as const, items: [poz], ...(line ? { lines: { [poz]: line } } : {}) };
+      const where = `${roomOf(h)} (CH ${ch > 0 ? ch : '?'})`;
+      model3d.add({ ...base, label: `${h.code} – ${where} – ${blades.length} bıçak 50×100 mm, 150 mm aks – brüt ${h.area.toFixed(2)} m²`, loops: blades, z0: z, z1: z + BLADE_H });
+      model3d.add({ ...base, label: `${h.code} taşıyıcı – ${where} – ${carriers.length} adet L 30×30, bıçaklara dik, 929 mm aks`, loops: carriers, z0: z + CARRIER_Z[0], z1: z + CARRIER_Z[1] });
+      model3d.add({ ...base, label: `${h.code} askı – ${where} – ${hangers.length} adet Ø6 çubuk, döşeme altı +${SLAB_UNDER.toFixed(2)}'e kadar (taşıyıcı boyunca 1200 mm varsayım)`, loops: hangers, z0: z + CARRIER_Z[1], z1: SLAB_UNDER });
+      continue;
+    }
     // saçak / konsol altı dış kaplamadır: kapalı başlayan tavan katmanında değil, cephede görünür
     model3d.add({ layer: h.code === 'SOFFIT' ? 'cephe' : 'tavan', kind: 'flat', items: [poz], ...(line ? { lines: { [poz]: line } } : {}), label: h.code === 'SOFFIT' && ln ? `${ln} – ${h.area.toFixed(2)} m²` : `${h.code} – ${roomOf(h)} (CH ${ch > 0 ? ch : '?'}) – ${h.area.toFixed(2)} m²`, loops: h.g, z0: z, z1: z });
   }

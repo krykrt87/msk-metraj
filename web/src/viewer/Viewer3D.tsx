@@ -18,6 +18,7 @@ const COLORS: Record<Layer3, number> = {
   çatı: 0xa9b3a4,
   cephe: 0xc4cbd3,
   donatı: 0x6941c6,
+  kaba: 0xa39382,
 };
 /** Saçak alnı alüminyum bantları: bantlar ayrı okunsun diye bant başına ton (görünüşteki gerçek renk değil). */
 const EAVE_BANDS: Record<string, number> = { 'C.5': 0xc3c8cd, 'C.6': 0x9aa2aa, 'C.7': 0xc3c8cd, 'C.8': 0x6f777e, 'C.17': 0x5c646b, 'D.13': 0xb4bbc2, frame: 0x4a5157 };
@@ -82,6 +83,7 @@ export default function Viewer3D({
     shot: () => void;
   } | null>(null);
   const [walk, setWalk] = useState(false);
+  const [sideOpen, setSideOpen] = useState(true);
   const [layers, setLayers] = useState<Record<string, boolean>>(() => Object.fromEntries(LAYERS3.map((l) => [l.key, l.visible])));
   const [mode, setMode] = useState<Mode>('seç');
   const [picked, setPicked] = useState<El3 | null>(null);
@@ -577,6 +579,9 @@ export default function Viewer3D({
         <button type="button" onClick={() => api.current?.shot()} title="Bakılan açıdan PNG indirir">
           Görüntü al
         </button>
+        <button type="button" className={sideOpen ? 'on' : ''} aria-pressed={sideOpen} aria-controls="v3-side" onClick={() => setSideOpen((o) => !o)} title="Katmanlar ve altlık panellerini aç / kapat">
+          Katmanlar
+        </button>
         {!!highlight?.size && (
           <button type="button" className="v3-clear" onClick={onClearSelection} title="Kısayol: Esc">
             Seçimi kaldır ×
@@ -584,7 +589,7 @@ export default function Viewer3D({
         )}
         {backend && <span className="v3-badge">{backend}</span>}
       </div>
-      <div className="v3-side">
+      <div className="v3-side" id="v3-side" hidden={!sideOpen}>
         <fieldset className="v3-layers">
           <legend>Katmanlar</legend>
           {LAYERS3.map((l) => (

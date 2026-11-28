@@ -51,7 +51,7 @@ const dedupe = (l: P[]) => l.filter((q, i) => i === 0 || Math.hypot(q.x - l[i - 
 
 /** Douglas–Peucker (mm toleransı); pin gibi tek noktalı çizgileri olduğu gibi bırakır. */
 export function simplify(pts: P[], tol: number, closed = true): P[] {
-  if (pts.length < 4) return pts;
+  if (pts.length < 4 || (closed && pts.length === 4)) return pts; // kapalı dörtgen sadeleşmez (Ø6 askı kesiti toleranstan küçük)
   const keep = new Uint8Array(pts.length);
   keep[0] = keep[pts.length - 1] = 1;
   const stack: [number, number][] = [[0, pts.length - 1]];

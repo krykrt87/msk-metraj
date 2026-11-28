@@ -10,6 +10,8 @@ import { Specs } from '../metraj/Specs';
 import { StatusIcon } from '../metraj/StatusIcon';
 
 type Show = 'hepsi' | 'eksik' | 'tam' | 'kesin_degil';
+type Sort = 'desc' | 'asc' | null;
+const NEXT_SORT: Record<string, Sort> = { null: 'desc', desc: 'asc', asc: null };
 
 /** Malzeme = özellik listesi tanımlı metraj kalemi (alan/uzunluk gibi yardımcı ölçüler hariç). */
 export const isMaterial = (i: Item) => !i.cancelled && (i.specs?.length ?? 0) > 0;
@@ -22,19 +24,39 @@ export function MalzemePage({ profile }: { profile: UserProfile }) {
   const [group, setGroup] = useState('');
   const [show, setShow] = useState<Show>('hepsi');
   const [open, setOpen] = useState<string | null>(null);
+  const [sort, setSort] = useState<Sort>(null);
+  const [busy, setBusy] = useState(false);
+  const [xlsError, setXlsError] = useState<string | null>(null);
 
   const materials = useMemo(() => items.data.filter(isMaterial), [items.data]);
-  const shown = useMemo(
-    () =>
-      filterItems(materials, { text, group: group || undefined }).filter((i) =>
-        show === 'eksik' ? missingOf(i) > 0 : show === 'tam' ? missingOf(i) === 0 : show === 'kesin_degil' ? i.status !== 'kesinlesti' : true,
-      ),
-    [materials, text, group, show],
-  );
+  const shown = useMemo(() => {
+    const list = filterItems(materials, { text, group: group || undefined }).filter((i) =>
+      show === 'eksik' ? missingOf(i) > 0 : show === 'tam' ? missingOf(i) === 0 : show === 'kesin_degil' ? i.status !== 'kesinlesti' : true,
+    );
+    if (!sort) return list;
+    const dir = sort === 'desc' ? -1 : 1;
+    // miktarı olmayanlar (ölçülemedi) yönden bağımsız hep sonda
+    return [...list].sort((a, b) => (a.value === null ? 1 : b.value === null ? -1 : dir * (a.value - b.value)));
+  }, [materials, text, group, show, sort]);
   const finalized = materials.filter((i) => i.status === 'kesinlesti').length;
   const complete = materials.filter((i) => missingOf(i) === 0).length;
   const missingTotal = materials.reduce((n, i) => n + missingOf(i), 0);
   const groups = (disc.data?.groups ?? []).filter((g) => materials.some((i) => i.group === g.key));
+
+  // Ekranda görünen liste (süzgeç + sıralama) indirilir; workbook dinamik: exceljs ve döngüsel içe aktarma ilk tıklamaya kalır
+  const download = async () => {
+    setBusy(true);
+    setXlsError(null);
+    try {
+      const { buildWorkbook, downloadWorkbook, stamp } = await import('../excel/workbook');
+      const wb = await buildWorkbook({ items: shown, rooms: [], findings: [] }, ['malzeme']);
+      await downloadWorkbook(wb, `MSK_Malzeme_${stamp()}.xlsx`);
+    } catch (e) {
+      setXlsError((e as Error).message || 'Excel üretilemedi.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   if (items.error) return <p className="center-note">Veri okunamadı: {items.error.message}</p>;
   if (items.loading) return <p className="center-note">Yükleniyor…</p>;
@@ -84,14 +106,26 @@ export function MalzemePage({ profile }: { profile: UserProfile }) {
         <span className="count">
           {shown.length} / {materials.length}
         </span>
+        <button type="button" className="btn" disabled={busy || shown.length === 0} onClick={download} title="Görünen listeyi (süzgeç ve sıralamayla) Excel olarak indirir">
+          {busy ? 'Hazırlanıyor…' : 'Excel indir'}
+        </button>
       </div>
+      {xlsError && (
+        <p className="form-error" role="alert">
+          {xlsError}
+        </p>
+      )}
       <table className="data malzeme-table">
         <thead>
           <tr>
             <th>Poz</th>
             <th>Malzeme</th>
             <th className="col-code">Proje kodu</th>
-            <th className="num">Miktar</th>
+            <th className="num" aria-sort={sort === 'desc' ? 'descending' : sort === 'asc' ? 'ascending' : undefined}>
+              <button type="button" className="th-sort" onClick={() => setSort(NEXT_SORT[String(sort)])} title="Miktara göre sırala (büyükten küçüğe / küçükten büyüğe / kapalı)">
+                Miktar {sort === 'desc' ? '▼' : sort === 'asc' ? '▲' : '↕'}
+              </button>
+            </th>
             <th>Metraj</th>
             <th>Özellikler</th>
           </tr>

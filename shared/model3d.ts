@@ -1,7 +1,7 @@
 // 3B model verisi: metraj motorunun ölçtüğü geometriden üretilir (work/model3d.json → Storage).
 // Koordinatlar metre, yerel orijin (zemin kat genel sınırının ortası), z = ±0,00'dan yükseklik.
 
-export type Layer3 = 'döşeme' | 'mahal' | 'duvar' | 'kolon' | 'tavan' | 'çatı' | 'cephe' | 'donatı';
+export type Layer3 = 'döşeme' | 'mahal' | 'duvar' | 'kolon' | 'tavan' | 'çatı' | 'cephe' | 'donatı' | 'kaba';
 
 export const LAYERS3: { key: Layer3; label: string; visible: boolean }[] = [
   { key: 'döşeme', label: 'Döşeme', visible: true },
@@ -12,10 +12,12 @@ export const LAYERS3: { key: Layer3; label: string; visible: boolean }[] = [
   { key: 'çatı', label: 'Çatı', visible: true },
   { key: 'cephe', label: 'Cephe', visible: true },
   { key: 'donatı', label: 'Kapı / donatı', visible: true },
+  // statik projeden, yalnız görsel (metraj kalemi yok); mimari kolonlarla çakışmasın diye kapalı başlar
+  { key: 'kaba', label: 'Kaba inşaat (statik)', visible: false },
 ];
 
 /** Eleman kimliği öneki: DUV-12 gibi (katman içinde üretim sırası). */
-export const ID_PREFIX: Record<Layer3, string> = { döşeme: 'DOS', mahal: 'MAH', duvar: 'DUV', kolon: 'KOL', tavan: 'TAV', çatı: 'CAT', cephe: 'CEP', donatı: 'DON' };
+export const ID_PREFIX: Record<Layer3, string> = { döşeme: 'DOS', mahal: 'MAH', duvar: 'DUV', kolon: 'KOL', tavan: 'TAV', çatı: 'CAT', cephe: 'CEP', donatı: 'DON', kaba: 'KAB' };
 
 export interface El3 {
   id: string;

@@ -8,6 +8,7 @@ import { gfItems } from './gf-items';
 import { wallTopAt } from './roof-items';
 import { model3d } from './model3d';
 import { buildUnderlay } from './underlay';
+import { structure3d } from './structure';
 import { setRooms } from './rooms-index';
 import { bbox } from '../lib/geom';
 import type { CalcRow } from '../lib/decompose';
@@ -159,6 +160,8 @@ async function main() {
   for (const i of items.filter((x) => x.formula && !(x.poz in vals))) findings.push({ topic: 'Formül', drawings: '-', finding: `${i.poz} formülü hesaplanamadı: ${i.formula}`, suggestion: 'Başvurulan kalemi kontrol edin.' });
 
   const origin = (() => { const b = bbox(gf.plate!.pts); return { x: Math.round((b.minX + b.maxX) / 2), y: Math.round((b.minY + b.maxY) / 2) }; })();
+  // kaba inşaat (statik, yalnız görsel): mimari kolonlara hizalanır
+  for (const n of structure3d(model3d.find((e) => e.layer === 'kolon' && !!e.loops).map((e) => e.loops![0]), gf.plate.pts)) console.log(n);
   const m3 = model3d.build(origin);
   writeFileSync('work/model3d.json', JSON.stringify(m3));
   console.log(`3B model: ${m3.elements.length} eleman`);
