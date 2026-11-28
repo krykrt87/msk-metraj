@@ -10,6 +10,7 @@ export function MahalPage() {
   const items = useItems();
   const [text, setText] = useState('');
   const [floor, setFloor] = useState('');
+  const [open, setOpen] = useState<string | null>(null);
 
   const dupCodes = useMemo(() => new Set(rooms.data.map((r) => r.code).filter((c, i, a) => a.indexOf(c) !== i)), [rooms.data]);
   const floors = useMemo(() => [...new Set(rooms.data.map((r) => r.floor))], [rooms.data]);
@@ -69,22 +70,33 @@ export function MahalPage() {
           </tr>
         </thead>
         <tbody>
-          {shown.map((r) => (
-            <Fragment key={r.id}>
-              <tr>
-                <td className="mono">{r.code}</td>
-                <td>{r.name}</td>
-                <td>{r.floor}</td>
-                <td className="num">{formatTr(r.area, 'm²')}</td>
-                <td>{r.ceilingLower ?? '—'}</td>
-                <td>{r.ceilingUpper ?? '—'}</td>
-                <td>{r.ch ?? '—'}</td>
-                <td>{r.flooring ?? '—'}</td>
-                <td>{r.note ?? ''}</td>
-              </tr>
-              <RoomItemsRow list={roomItems(items.data, dupCodes.has(r.code) ? `${r.code} ${r.name}` : r.code)} />
-            </Fragment>
-          ))}
+          {shown.map((r) => {
+            const isOpen = open === r.id;
+            return (
+              <Fragment key={r.id}>
+                <tr className={`mrow${isOpen ? ' open' : ''}`} onClick={() => setOpen(isOpen ? null : r.id)}>
+                  <td className="mono">{r.code}</td>
+                  <td>
+                    {/* tıklama satıra kabarır; düğme klavye ve ekran okuyucu için */}
+                    <button type="button" className="mrow-btn" aria-expanded={isOpen}>
+                      <span className="caret" aria-hidden="true">
+                        {isOpen ? '▾' : '▸'}
+                      </span>
+                      {r.name}
+                    </button>
+                  </td>
+                  <td>{r.floor}</td>
+                  <td className="num">{formatTr(r.area, 'm²')}</td>
+                  <td>{r.ceilingLower ?? '—'}</td>
+                  <td>{r.ceilingUpper ?? '—'}</td>
+                  <td>{r.ch ?? '—'}</td>
+                  <td>{r.flooring ?? '—'}</td>
+                  <td>{r.note ?? ''}</td>
+                </tr>
+                {isOpen && <RoomItemsRow list={roomItems(items.data, dupCodes.has(r.code) ? `${r.code} ${r.name}` : r.code)} />}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
       {shown.length === 0 && <p className="hint pad">Süzgece uyan mahal yok.</p>}
